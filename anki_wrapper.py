@@ -52,7 +52,15 @@ class AnkiWrapper:
                 self.col.decks.remove([deck_id])
 
     def get_decks(self, cards: list[int]) -> dict[str, list[int]]:
-        return {}
+        result = {}
+        for card_id in cards:
+            card = self.col.get_card(CardId(card_id))
+            if card:
+                deck_name = self.col.decks.name(card.did)
+                if deck_name not in result:
+                    result[deck_name] = []
+                result[deck_name].append(card_id)
+        return result
 
     def change_deck(self, cards: list[int], deck: str) -> None:
         pass
