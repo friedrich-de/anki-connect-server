@@ -32,11 +32,12 @@ class AnkiWrapper:
             password=config.ANKIWEB_PASS,
             endpoint=endpoint,
         )
-        result = self.col.sync_collection(auth, sync_media=True)
+        result = self.col.sync_collection(auth, sync_media=False)
         return f"sync completed: {result}"
 
     def deck_names(self) -> list[str]:
-        return list(self.col.decks.all_names())
+        decks = self.col.decks.all_names_and_ids()
+        return [d.name for d in decks]
 
     def deck_names_and_ids(self) -> dict[str, int]:
         decks = self.col.decks.all_names_and_ids()
@@ -87,7 +88,8 @@ class AnkiWrapper:
         return True
 
     def model_names(self) -> list[str]:
-        return list(self.col.models.all_names())
+        models = self.col.models.all_names_and_ids()
+        return [m.name for m in models]
 
     def model_names_and_ids(self) -> dict[str, int]:
         models = self.col.models.all_names_and_ids()
