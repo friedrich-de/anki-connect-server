@@ -4,8 +4,6 @@ import os
 import tempfile
 import pytest
 
-os.environ["ANKICONNECT_COLLECTION_PATH"] = "/tmp/test_handler.anki21"
-
 
 @pytest.fixture
 def anki_wrapper():
