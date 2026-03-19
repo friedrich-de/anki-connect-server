@@ -16,7 +16,6 @@ wrapper: Optional[AnkiWrapper] = None
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global wrapper
-    config.validate()
     wrapper = AnkiWrapper(config.COLLECTION_PATH)
     yield
     if wrapper:

@@ -35,10 +35,14 @@ def test_config_ankiweb():
     assert cfg.ANKIWEB_PASS == "password123"
 
 
-def test_config_optional_ankiweb():
-    """Test that AnkiWeb config is optional."""
+def test_config_optional_ankiweb(monkeypatch):
+    """Test that AnkiWeb config is optional when not set in env."""
     from config import Config
-    cfg = Config(COLLECTION_PATH="/test/path.anki21")
+    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/test/path.anki21")
+    monkeypatch.delenv("ANKICONNECT_ANKIWEB_USER", raising=False)
+    monkeypatch.delenv("ANKICONNECT_ANKIWEB_PASS", raising=False)
+    
+    cfg = Config(_env_file=None)
     assert cfg.ANKIWEB_USER is None
     assert cfg.ANKIWEB_PASS is None
 

@@ -106,6 +106,45 @@ class TestModelHandlers:
         assert "Back" in result
 
 
+class TestNoteHandlers:
+    """Test note-related handlers."""
+
+    @pytest.mark.asyncio
+    async def test_handle_add_note(self, anki_wrapper):
+        """Test addNote handler."""
+        from api.handlers import handle_add_note
+        result = await handle_add_note(anki_wrapper, {
+            "note": {
+                "deckName": "Default",
+                "modelName": "Basic",
+                "fields": {"Front": "Test", "Back": "Answer"}
+            }
+        })
+        assert result is not None
+
+    @pytest.mark.asyncio
+    async def test_handle_add_notes(self, anki_wrapper):
+        """Test addNotes handler."""
+        from api.handlers import handle_add_notes
+        result = await handle_add_notes(anki_wrapper, {
+            "notes": [
+                {
+                    "deckName": "Default",
+                    "modelName": "Basic",
+                    "fields": {"Front": "Note1", "Back": "Answer1"}
+                },
+                {
+                    "deckName": "Default",
+                    "modelName": "Basic",
+                    "fields": {"Front": "Note2", "Back": "Answer2"}
+                }
+            ]
+        })
+        assert len(result) == 2
+        assert result[0] is not None
+        assert result[1] is not None
+
+
 class TestTagHandlers:
     """Test tag-related handlers."""
 
@@ -151,3 +190,29 @@ class TestDispatch:
         from api.handlers import dispatch
         result = await dispatch("deckNames", {}, anki_wrapper)
         assert isinstance(result, list)
+
+
+class TestSyncHandlers:
+    """Test sync-related handlers."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        not os.environ.get("ANKICONNECT_ANKIWEB_USER"),
+        reason="ANKICONNECT_ANKIWEB_USER not set"
+    )
+    async def test_handle_sync_status(self, anki_wrapper):
+        """Test syncStatus handler."""
+        from api.handlers import handle_sync_status
+        result = await handle_sync_status(anki_wrapper, {})
+        assert "server" in result
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(
+        not os.environ.get("ANKICONNECT_ANKIWEB_USER"),
+        reason="ANKICONNECT_ANKIWEB_USER not set"
+    )
+    async def test_handle_sync_media(self, anki_wrapper):
+        """Test syncMedia handler."""
+        from api.handlers import handle_sync_media
+        result = await handle_sync_media(anki_wrapper, {})
+        assert result is not None
