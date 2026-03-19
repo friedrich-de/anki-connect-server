@@ -39,7 +39,8 @@ class AnkiWrapper:
         return list(self.col.decks.all_names())
 
     def deck_names_and_ids(self) -> dict[str, int]:
-        return {name: id for id, name in self.col.decks.all_names_and_ids().items()}
+        decks = self.col.decks.all_names_and_ids()
+        return {d.name: d.id for d in decks}
 
     def get_decks(self, cards: list[int]) -> dict[str, list[int]]:
         return self.col.decks.cards_by_name(cards)
@@ -48,8 +49,10 @@ class AnkiWrapper:
         return self.col.decks.id(deck)
 
     def delete_decks(self, decks: list[str], cards_too: bool = False) -> None:
-        deck_ids = [self.col.decks.id(d) for d in decks]
-        self.col.decks.delete_given_decks(deck_ids, cards_too)
+        for deck in decks:
+            deck_id = self.col.decks.id_for_name(deck)
+            if deck_id:
+                self.col.decks.remove([deck_id])
 
     def change_deck(self, cards: list[int], deck: str) -> None:
         deck_id = self.col.decks.id(deck)
@@ -80,16 +83,25 @@ class AnkiWrapper:
         return list(self.col.models.all_names())
 
     def model_names_and_ids(self) -> dict[str, int]:
-        return {name: id for id, name in self.col.models.all_names_and_ids().items()}
+        models = self.col.models.all_names_and_ids()
+        return {m.name: m.id for m in models}
+
+    def _get_model_by_name(self, model_name: str):
+        """Get model dict by name."""
+        models = self.col.models.all_names_and_ids()
+        for m in models:
+            if m.name == model_name:
+                return self.col.models.get(m.id)
+        return None
 
     def model_field_names(self, model_name: str) -> list[str]:
-        model = self.col.models.get(model_name)
+        model = self._get_model_by_name(model_name)
         if not model:
             return []
-        return [f["name"] for f in model["fields"].values()]
+        return [f["name"] for f in model.get("flds", [])]
 
     def model_fields_on_templates(self, model_name: str) -> dict[str, list[list[str]]]:
-        model = self.col.models.get(model_name)
+        model = self._get_model_by_name(model_name)
         if not model:
             return {}
         result = {}
@@ -124,7 +136,7 @@ class AnkiWrapper:
         self.col.models.add(notetype)
 
     def model_templates(self, model_name: str) -> dict[str, dict[str, str]]:
-        model = self.col.models.get(model_name)
+        model = self._get_model_by_name(model_name)
         if not model:
             return {}
         result = {}
@@ -133,13 +145,13 @@ class AnkiWrapper:
         return result
 
     def model_styling(self, model_name: str) -> dict[str, Any]:
-        model = self.col.models.get(model_name)
+        model = self._get_model_by_name(model_name)
         if not model:
             return {}
         return {"css": model.get("css", "")}
 
     def update_model_templates(self, model: dict) -> None:
-        notetype = self.col.models.get(model["name"])
+        notetype = self._get_model_by_name(model["name"])
         if not notetype:
             return
         for name, templates in model.get("templates", {}).items():
@@ -151,7 +163,7 @@ class AnkiWrapper:
         self.col.models.update_notetype(notetype)
 
     def update_model_styling(self, model: dict) -> None:
-        notetype = self.col.models.get(model["name"])
+        notetype = self._get_model_by_name(model["name"])
         if not notetype:
             return
         if "css" in model:
@@ -159,11 +171,12 @@ class AnkiWrapper:
         self.col.models.update_notetype(notetype)
 
     def add_note(self, note: dict) -> Optional[int]:
-        model = self.col.models.get(note.get("modelName", ""))
-        if not model:
+        model_name = note.get("modelName", "")
+        notetype = self._get_model_by_name(model_name)
+        if not notetype:
             return None
         deck_id = self.col.decks.id(note.get("deckName", "Default"))
-        new_note = Note(self.col, model)
+        new_note = Note(self.col, notetype)
         for field_name, value in note.get("fields", {}).items():
             new_note[field_name] = value
         if "tags" in note:
