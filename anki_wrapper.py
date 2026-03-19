@@ -380,21 +380,29 @@ class AnkiWrapper:
         deck_id = self.col.decks.id(deck)
         self.col.export_anki_package(path, deck_id, include_sched)
 
-    def sync_status(self) -> dict:
-        if not config.ANKIWEB_USER or not config.ANKIWEB_PASS:
+    def sync_status(
+        self,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
+        endpoint: Optional[str] = None,
+    ) -> dict:
+        user = username or config.ANKIWEB_USER
+        pass_ = password or config.ANKIWEB_PASS
+        url = endpoint or config.ANKIWEB_URL
+
+        if not user or not pass_:
             raise ValueError("ANKICONNECT_ANKIWEB_USER and ANKIWEB_PASS required for sync status")
 
-        endpoint = config.ANKIWEB_URL
         auth = self.col.sync_login(
-            username=config.ANKIWEB_USER,
-            password=config.ANKIWEB_PASS,
-            endpoint=endpoint,
+            username=user,
+            password=pass_,
+            endpoint=url,
         )
         status = self.col.sync_status(auth)
         return {
-            "server": status.server,
-            "status": status.status,
-            "required": status.required,
+            "server": getattr(status, "server", str(status)),
+            "status": getattr(status, "status", str(status)),
+            "required": getattr(status, "required", 0),
         }
 
     def sync_media_only(self) -> str:

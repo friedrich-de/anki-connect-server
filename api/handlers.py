@@ -29,7 +29,10 @@ async def handle_sync(wrapper: AnkiWrapper, params: dict) -> str:
 
 
 async def handle_sync_status(wrapper: AnkiWrapper, params: dict) -> dict:
-    return await asyncio.to_thread(wrapper.sync_status)
+    endpoint = params.get("endpoint")
+    username = params.get("username")
+    password = params.get("password")
+    return wrapper.sync_status(username=username, password=password, endpoint=endpoint)
 
 
 async def handle_sync_media(wrapper: AnkiWrapper, params: dict) -> str:
