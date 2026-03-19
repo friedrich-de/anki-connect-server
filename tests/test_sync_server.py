@@ -9,34 +9,55 @@ import pytest
 
 SYNC_USER = "testuser"
 SYNC_PASS = "testpass"
-SYNC_PORT = 18766
+SYNC_PORT = 18770
 SYNC_HOST = "127.0.0.1"
 
 
-@pytest.fixture(scope="class")
+class SyncServer:
+    """Context manager for running a sync server in a subprocess."""
+
+    def __init__(self, host: str, port: int, user: str, password: str):
+        self.host = host
+        self.port = port
+        self.user = user
+        self.password = password
+        self.process = None
+
+    def __enter__(self):
+        env = os.environ.copy()
+        env["SYNC_USER1"] = f"{self.user}:{self.password}"
+        env["SYNC_HOST"] = self.host
+        env["SYNC_PORT"] = str(self.port)
+
+        self.process = subprocess.Popen(
+            ["uv", "run", "python", "-m", "anki.syncserver"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(2)
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if self.process:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+        return False
+
+    @property
+    def url(self) -> str:
+        return f"http://{self.host}:{self.port}"
+
+
+@pytest.fixture
 def sync_server():
-    """Start a sync server in a subprocess and yield its URL."""
-    env = os.environ.copy()
-    env["SYNC_USER1"] = f"{SYNC_USER}:{SYNC_PASS}"
-    env["SYNC_HOST"] = SYNC_HOST
-    env["SYNC_PORT"] = str(SYNC_PORT)
-
-    process = subprocess.Popen(
-        ["uv", "run", "python", "-m", "anki.syncserver"],
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-
-    time.sleep(3)
-
-    yield f"http://{SYNC_HOST}:{SYNC_PORT}"
-
-    process.terminate()
-    try:
-        process.wait(timeout=5)
-    except subprocess.TimeoutExpired:
-        process.kill()
+    """Provide a running sync server."""
+    server = SyncServer(SYNC_HOST, SYNC_PORT, SYNC_USER, SYNC_PASS)
+    with server:
+        yield server
 
 
 @pytest.fixture
@@ -48,7 +69,7 @@ def sync_anki_wrapper(sync_server):
         from anki_wrapper import AnkiWrapper
         wrapper = AnkiWrapper(collection_path)
 
-        yield wrapper, sync_server
+        yield wrapper, sync_server.url
 
         wrapper.close()
 
