@@ -42,11 +42,6 @@ class AnkiConnectResponse(BaseModel):
     error: Optional[str] = None
 
 
-@app.get("/")
-async def root():
-    return {"message": "AnkiConnect Server is running"}
-
-
 @app.get("/health")
 async def health():
     return {"status": "healthy"}

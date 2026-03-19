@@ -1,28 +1,21 @@
 import os
 import tempfile
 import pytest
-from unittest.mock import MagicMock, patch
 
 os.environ["ANKI_COLLECTION_PATH"] = "/tmp/test_collection.anki21"
 
 
 @pytest.fixture
-def mock_collection():
-    """Create a mock Anki collection."""
+def anki_wrapper():
+    """Create AnkiWrapper with mocked collection."""
+    from unittest.mock import MagicMock, patch
     with patch("anki_wrapper.Collection") as mock_col:
         mock_instance = MagicMock()
         mock_col.return_value = mock_instance
-        yield mock_instance
-
-
-@pytest.fixture
-def anki_wrapper(mock_collection):
-    """Create AnkiWrapper with mocked collection."""
-    from anki_wrapper import AnkiWrapper
-    with patch("anki_wrapper.Collection"):
+        from anki_wrapper import AnkiWrapper
         wrapper = AnkiWrapper("/tmp/test.anki21")
-        wrapper.col = mock_collection
-        return wrapper
+        wrapper.col = mock_instance
+        yield wrapper
 
 
 @pytest.fixture

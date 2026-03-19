@@ -3,7 +3,7 @@ import base64
 from pathlib import Path
 from typing import Any, Optional
 
-from anki import Collection, Notes
+from anki.collection import Collection
 from anki.cards import CardId
 from anki.decks import DeckId
 from anki.notes import Note, NoteId

@@ -1,0 +1,3 @@
+- [ ] use BaseSettings with SettingsConfigDict .env for config
+- [ ] write out schemas for each action with discriminator as identifier
+- [ ] do not mock mock_collection
