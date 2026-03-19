@@ -1,6 +1,10 @@
+import asyncio
+import logging
+
 from typing import Any, Optional
 from anki_wrapper import AnkiWrapper
-import asyncio
+
+logger = logging.getLogger(__name__)
 
 
 API_VERSION = 6
@@ -321,5 +325,6 @@ ACTION_HANDLERS = {
 async def dispatch(action: str, params: dict, wrapper: AnkiWrapper) -> Any:
     handler = ACTION_HANDLERS.get(action)
     if not handler:
+        logger.warning(f"Unsupported action requested: {action}")
         raise ValueError(f"Unsupported action: {action}")
     return await handler(wrapper, params)
