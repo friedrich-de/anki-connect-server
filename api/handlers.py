@@ -7,6 +7,16 @@ from anki_wrapper import AnkiWrapper
 logger = logging.getLogger(__name__)
 
 
+class ValidationError(ValueError):
+    pass
+
+
+def require_params(params: dict, *required_keys: str) -> None:
+    missing = [k for k in required_keys if k not in params or params[k] is None]
+    if missing:
+        raise ValidationError(f"Missing required parameters: {', '.join(missing)}")
+
+
 API_VERSION = 6
 
 
@@ -40,7 +50,10 @@ async def handle_get_decks(wrapper: AnkiWrapper, params: dict) -> dict[str, list
 
 
 async def handle_create_deck(wrapper: AnkiWrapper, params: dict) -> int:
+    require_params(params, "deck")
     deck = params.get("deck", "")
+    if not deck:
+        raise ValidationError("Deck name cannot be empty")
     return wrapper.create_deck(deck)
 
 
@@ -131,22 +144,34 @@ async def handle_update_model_styling(wrapper: AnkiWrapper, params: dict) -> Non
 
 
 async def handle_add_note(wrapper: AnkiWrapper, params: dict) -> Optional[int]:
+    require_params(params, "note")
     note = params.get("note", {})
+    if not isinstance(note, dict):
+        raise ValidationError("note must be a dictionary")
     return wrapper.add_note(note)
 
 
 async def handle_add_notes(wrapper: AnkiWrapper, params: dict) -> list[Optional[int]]:
+    require_params(params, "notes")
     notes = params.get("notes", [])
+    if not isinstance(notes, list):
+        raise ValidationError("notes must be a list")
     return wrapper.add_notes(notes)
 
 
 async def handle_can_add_notes(wrapper: AnkiWrapper, params: dict) -> list[bool]:
+    require_params(params, "notes")
     notes = params.get("notes", [])
+    if not isinstance(notes, list):
+        raise ValidationError("notes must be a list")
     return wrapper.can_add_notes(notes)
 
 
 async def handle_update_note_fields(wrapper: AnkiWrapper, params: dict) -> None:
+    require_params(params, "note")
     note = params.get("note", {})
+    if not isinstance(note, dict):
+        raise ValidationError("note must be a dictionary")
     wrapper.update_note_fields(note)
 
 
@@ -327,4 +352,8 @@ async def dispatch(action: str, params: dict, wrapper: AnkiWrapper) -> Any:
     if not handler:
         logger.warning(f"Unsupported action requested: {action}")
         raise ValueError(f"Unsupported action: {action}")
-    return await handler(wrapper, params)
+    try:
+        return await handler(wrapper, params)
+    except ValidationError as e:
+        logger.warning(f"Validation error in {action}: {e}")
+        raise ValueError(str(e))
