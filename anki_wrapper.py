@@ -1,5 +1,6 @@
 import os
 import base64
+import logging
 from pathlib import Path
 from typing import Any, Optional
 
@@ -10,6 +11,8 @@ from anki.notes import Note, NoteId
 from anki.models import NotetypeDict
 
 from config import config
+
+logger = logging.getLogger(__name__)
 
 
 class AnkiWrapper:
@@ -35,22 +38,28 @@ class AnkiWrapper:
         
         result = self.col.sync_collection(auth, sync_media=False)
         
-        if result.required == 3:
-            self.col.close_for_full_sync()
-            self.col.full_upload_or_download(
-                auth=auth, server_usn=result.server_media_usn, upload=False
-            )
+        try:
+            if result.required == 3:
+                self.col.close_for_full_sync()
+                self.col.full_upload_or_download(
+                    auth=auth, server_usn=result.server_media_usn, upload=False
+                )
+                self.col = Collection(self.collection_path)
+            elif result.required == 4:
+                self.col.close_for_full_sync()
+                self.col.full_upload_or_download(
+                    auth=auth, server_usn=result.server_media_usn, upload=True
+                )
+                self.col = Collection(self.collection_path)
+            else:
+                self.col.close()
+                self.col = Collection(self.collection_path)
+        except Exception as e:
+            logger.error(f"Sync failed: {e}")
             self.col = Collection(self.collection_path)
-        elif result.required == 4:
-            self.col.close_for_full_sync()
-            self.col.full_upload_or_download(
-                auth=auth, server_usn=result.server_media_usn, upload=True
-            )
-            self.col = Collection(self.collection_path)
-        else:
-            self.col.close()
-            self.col = Collection(self.collection_path)
+            raise
         
+        logger.info(f"Sync completed: host={result.host_number}, required={result.required}")
         return f"sync completed: host={result.host_number}, required={result.required}"
 
     def deck_names(self) -> list[str]:
@@ -392,6 +401,7 @@ class AnkiWrapper:
             endpoint=endpoint,
         )
         self.col.sync_media(auth)
+        logger.info("Media sync completed")
         return "media sync completed"
 
     def get_sync_auth(self) -> Any:
