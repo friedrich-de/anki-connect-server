@@ -1,83 +1,75 @@
 """Tests for config module."""
 
-import os
 import pytest
-from unittest.mock import patch
-import importlib
 
 
-def reload_config():
-    """Reload config module to pick up new env vars."""
+def test_config_defaults():
+    """Test that config has correct defaults."""
+    from config import Config
+    cfg = Config(COLLECTION_PATH="/test/path.anki21")
+    assert cfg.PORT == 8765
+    assert cfg.BIND == "127.0.0.1"
+
+
+def test_config_custom_values():
+    """Test custom configuration values."""
+    from config import Config
+    cfg = Config(
+        PORT=9000,
+        BIND="0.0.0.0",
+        COLLECTION_PATH="/test/path.anki21"
+    )
+    assert cfg.PORT == 9000
+    assert cfg.BIND == "0.0.0.0"
+
+
+def test_config_ankiweb():
+    """Test AnkiWeb configuration."""
+    from config import Config
+    cfg = Config(
+        COLLECTION_PATH="/test/path.anki21",
+        ANKIWEB_USER="test@example.com",
+        ANKIWEB_PASS="password123"
+    )
+    assert cfg.ANKIWEB_USER == "test@example.com"
+    assert cfg.ANKIWEB_PASS == "password123"
+
+
+def test_config_optional_ankiweb():
+    """Test that AnkiWeb config is optional."""
+    from config import Config
+    cfg = Config(COLLECTION_PATH="/test/path.anki21")
+    assert cfg.ANKIWEB_USER is None
+    assert cfg.ANKIWEB_PASS is None
+
+
+def test_validate_raises_without_collection_path():
+    """Test that validation raises error without collection path."""
+    from config import Config
+    cfg = Config()
+    with pytest.raises(ValueError, match="ANKI_COLLECTION_PATH"):
+        cfg.validate()
+
+
+def test_validate_passes_with_collection_path():
+    """Test that validation passes with collection path."""
+    from config import Config
+    cfg = Config(COLLECTION_PATH="/test/path.anki21")
+    cfg.validate()
+
+
+def test_config_loads_from_env(monkeypatch):
+    """Test that config loads from environment variables."""
+    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/env/path.anki21")
+    monkeypatch.setenv("ANKICONNECT_PORT", "9000")
+    monkeypatch.setenv("ANKICONNECT_ANKIWEB_USER", "env@user.com")
+    monkeypatch.setenv("ANKICONNECT_ANKIWEB_URL", "https://sync.example.com")
+    
+    import importlib
     import config
     importlib.reload(config)
-    return config
-
-
-class TestConfig:
-    """Test configuration module."""
-
-    def test_default_config(self):
-        """Test default configuration values."""
-        with patch.dict(os.environ, {"ANKI_COLLECTION_PATH": "/test/path.anki21"}):
-            cfg = reload_config()
-            assert cfg.config.PORT == 8765
-            assert cfg.config.BIND == "127.0.0.1"
-            assert cfg.config.COLLECTION_PATH == "/test/path.anki21"
-
-    def test_custom_port(self):
-        """Test custom port configuration."""
-        with patch.dict(os.environ, {
-            "ANKI_COLLECTION_PATH": "/test/path.anki21",
-            "ANKICONNECT_PORT": "9000"
-        }):
-            cfg = reload_config()
-            assert cfg.config.PORT == 9000
-
-    def test_custom_bind(self):
-        """Test custom bind address configuration."""
-        with patch.dict(os.environ, {
-            "ANKI_COLLECTION_PATH": "/test/path.anki21",
-            "ANKICONNECT_BIND": "0.0.0.0"
-        }):
-            cfg = reload_config()
-            assert cfg.config.BIND == "0.0.0.0"
-
-    def test_ankiweb_config(self):
-        """Test AnkiWeb configuration."""
-        with patch.dict(os.environ, {
-            "ANKI_COLLECTION_PATH": "/test/path.anki21",
-            "ANKICONNECT_ANKIWEB_USER": "test@example.com",
-            "ANKICONNECT_ANKIWEB_PASS": "password123"
-        }):
-            cfg = reload_config()
-            assert cfg.config.ANKIWEB_USER == "test@example.com"
-            assert cfg.config.ANKIWEB_PASS == "password123"
-
-    def test_ankiweb_url_config(self):
-        """Test custom sync server URL."""
-        with patch.dict(os.environ, {
-            "ANKI_COLLECTION_PATH": "/test/path.anki21",
-            "ANKIWEB_URL": "https://sync.myserver.com"
-        }):
-            cfg = reload_config()
-            assert cfg.config.ANKIWEB_URL == "https://sync.myserver.com"
-
-    def test_validate_raises_without_collection_path(self):
-        """Test that validation raises error without collection path."""
-        with patch.dict(os.environ, {}, clear=True):
-            cfg = reload_config()
-            with pytest.raises(ValueError, match="ANKI_COLLECTION_PATH"):
-                cfg.Config.validate()
-
-    def test_validate_passes_with_collection_path(self):
-        """Test that validation passes with collection path."""
-        with patch.dict(os.environ, {"ANKI_COLLECTION_PATH": "/test/path.anki21"}):
-            cfg = reload_config()
-            cfg.Config.validate()
-
-    def test_optional_ankiweb_config(self):
-        """Test that AnkiWeb config is optional."""
-        with patch.dict(os.environ, {"ANKI_COLLECTION_PATH": "/test/path.anki21"}):
-            cfg = reload_config()
-            assert cfg.config.ANKIWEB_USER is None
-            assert cfg.config.ANKIWEB_PASS is None
+    
+    assert config.config.PORT == 9000
+    assert config.config.COLLECTION_PATH == "/env/path.anki21"
+    assert config.config.ANKIWEB_USER == "env@user.com"
+    assert config.config.ANKIWEB_URL == "https://sync.example.com"

@@ -1,21 +1,27 @@
-import os
 from typing import Optional
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class Config:
-    PORT: int = int(os.environ.get("ANKICONNECT_PORT", "8765"))
-    BIND: str = os.environ.get("ANKICONNECT_BIND", "127.0.0.1")
+class Config(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        env_prefix="ANKICONNECT_",
+    )
 
-    COLLECTION_PATH: str = os.environ.get("ANKI_COLLECTION_PATH", "")
+    PORT: int = 8765
+    BIND: str = "127.0.0.1"
 
-    ANKIWEB_USER: Optional[str] = os.environ.get("ANKICONNECT_ANKIWEB_USER")
-    ANKIWEB_PASS: Optional[str] = os.environ.get("ANKICONNECT_ANKIWEB_PASS")
+    COLLECTION_PATH: str = ""
 
-    ANKIWEB_URL: Optional[str] = os.environ.get("ANKIWEB_URL")
+    ANKIWEB_USER: Optional[str] = None
+    ANKIWEB_PASS: Optional[str] = None
 
-    @classmethod
-    def validate(cls) -> None:
-        if not cls.COLLECTION_PATH:
+    ANKIWEB_URL: Optional[str] = None
+
+    def validate(self) -> None:
+        if not self.COLLECTION_PATH:
             raise ValueError("ANKI_COLLECTION_PATH environment variable is required")
 
 
