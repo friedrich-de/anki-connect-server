@@ -67,6 +67,11 @@ class TestAnkiWrapperIntegration:
         assert "Default" in result
         assert card_ids[0] in result["Default"]
 
+    def test_get_decks_empty(self, anki_wrapper):
+        """Test get_decks with empty list."""
+        result = anki_wrapper.get_decks([])
+        assert result == {}
+
     def test_list_models(self, anki_wrapper):
         """Test listing note models."""
         models = anki_wrapper.model_names()
@@ -97,6 +102,15 @@ class TestAnkiWrapperIntegration:
         })
         assert note_id is not None
 
+    def test_add_note_invalid_model(self, anki_wrapper):
+        """Test adding a note with invalid model returns None."""
+        note_id = anki_wrapper.add_note({
+            "deckName": "Default",
+            "modelName": "NonExistent",
+            "fields": {"Front": "Test", "Back": "Answer"}
+        })
+        assert note_id is None
+
     def test_add_notes(self, anki_wrapper):
         """Test adding multiple notes."""
         result = anki_wrapper.add_notes([
@@ -116,6 +130,12 @@ class TestAnkiWrapperIntegration:
         })
         anki_wrapper.update_note_fields({
             "id": note_id,
+            "fields": {"Front": "Updated"}
+        })
+
+    def test_update_note_fields_missing_id(self, anki_wrapper):
+        """Test update_note_fields with missing id does nothing."""
+        anki_wrapper.update_note_fields({
             "fields": {"Front": "Updated"}
         })
 
