@@ -283,6 +283,14 @@ class TestAnkiWrapperIntegration:
         decks = anki_wrapper.deck_names()
         assert "DeckWithCards" not in decks
 
+    def test_can_add_notes(self, anki_wrapper):
+        """Test can_add_notes."""
+        result = anki_wrapper.can_add_notes([
+            {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "Test", "Back": "Test"}}
+        ])
+        assert len(result) == 1
+        assert result[0] is True
+
     def test_get_api_version(self):
         """Test API version constant."""
         from api.handlers import API_VERSION

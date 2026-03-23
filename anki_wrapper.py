@@ -154,7 +154,8 @@ class AnkiWrapper:
         if not model:
             return {}
         result = {}
-        for name, tmpl in model["tmpls"].items():
+        for tmpl in model.get("tmpls", []):
+            name = tmpl.get("name", "")
             qfmt = [f["name"] for f in tmpl.get("qfmt", [])]
             afmt = [f["name"] for f in tmpl.get("afmt", [])]
             result[name] = [qfmt, afmt]
@@ -189,7 +190,8 @@ class AnkiWrapper:
         if not model:
             return {}
         result = {}
-        for name, tmpl in model["tmpls"].items():
+        for tmpl in model.get("tmpls", []):
+            name = tmpl.get("name", "")
             result[name] = {"Front": tmpl.get("qfmt", ""), "Back": tmpl.get("afmt", "")}
         return result
 
