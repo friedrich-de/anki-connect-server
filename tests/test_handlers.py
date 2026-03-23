@@ -341,3 +341,70 @@ class TestMultiHandler:
             ]
         })
         assert len(result) == 2
+
+
+class TestValidationErrors:
+    """Test validation error handling."""
+
+    @pytest.mark.asyncio
+    async def test_create_deck_empty_name(self, anki_wrapper):
+        """Test createDeck with empty name raises error."""
+        from api.handlers import handle_create_deck, ValidationError
+        with pytest.raises(ValueError, match="cannot be empty"):
+            await handle_create_deck(anki_wrapper, {"deck": ""})
+
+    @pytest.mark.asyncio
+    async def test_create_deck_missing_deck(self, anki_wrapper):
+        """Test createDeck without deck param raises error."""
+        from api.handlers import handle_create_deck, ValidationError
+        with pytest.raises(ValueError, match="Missing required parameters"):
+            await handle_create_deck(anki_wrapper, {})
+
+    @pytest.mark.asyncio
+    async def test_add_note_missing_note(self, anki_wrapper):
+        """Test addNote without note param raises error."""
+        from api.handlers import handle_add_note, ValidationError
+        with pytest.raises(ValueError, match="Missing required parameters"):
+            await handle_add_note(anki_wrapper, {})
+
+    @pytest.mark.asyncio
+    async def test_add_note_invalid_note_type(self, anki_wrapper):
+        """Test addNote with non-dict note raises error."""
+        from api.handlers import handle_add_note, ValidationError
+        with pytest.raises(ValueError, match="note must be a dictionary"):
+            await handle_add_note(anki_wrapper, {"note": "not a dict"})
+
+    @pytest.mark.asyncio
+    async def test_add_notes_missing_notes(self, anki_wrapper):
+        """Test addNotes without notes param raises error."""
+        from api.handlers import handle_add_notes, ValidationError
+        with pytest.raises(ValueError, match="Missing required parameters"):
+            await handle_add_notes(anki_wrapper, {})
+
+    @pytest.mark.asyncio
+    async def test_add_notes_invalid_notes_type(self, anki_wrapper):
+        """Test addNotes with non-list notes raises error."""
+        from api.handlers import handle_add_notes, ValidationError
+        with pytest.raises(ValueError, match="notes must be a list"):
+            await handle_add_notes(anki_wrapper, {"notes": "not a list"})
+
+    @pytest.mark.asyncio
+    async def test_update_note_fields_missing_note(self, anki_wrapper):
+        """Test updateNoteFields without note param raises error."""
+        from api.handlers import handle_update_note_fields, ValidationError
+        with pytest.raises(ValueError, match="Missing required parameters"):
+            await handle_update_note_fields(anki_wrapper, {})
+
+    @pytest.mark.asyncio
+    async def test_update_note_fields_invalid_note_type(self, anki_wrapper):
+        """Test updateNoteFields with non-dict note raises error."""
+        from api.handlers import handle_update_note_fields, ValidationError
+        with pytest.raises(ValueError, match="note must be a dictionary"):
+            await handle_update_note_fields(anki_wrapper, {"note": 123})
+
+    @pytest.mark.asyncio
+    async def test_can_add_notes_missing_notes(self, anki_wrapper):
+        """Test canAddNotes without notes param raises error."""
+        from api.handlers import handle_can_add_notes, ValidationError
+        with pytest.raises(ValueError, match="Missing required parameters"):
+            await handle_can_add_notes(anki_wrapper, {})
