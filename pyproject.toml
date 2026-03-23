@@ -37,3 +37,4 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+addopts = "--cov=. --cov-report=xml --cov-report=term-missing"
