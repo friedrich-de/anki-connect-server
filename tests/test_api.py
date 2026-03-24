@@ -9,9 +9,12 @@ from anki_connect_server import app
 
 @pytest.fixture
 def app_with_wrapper(anki_wrapper):
-    """Patch the app to use the real anki_wrapper."""
-    with patch("anki_connect_server.api.wrapper", anki_wrapper):
-        yield anki_wrapper
+    """Patch the wrapper module to use the real anki_wrapper."""
+    from anki_connect_server import wrapper
+    original_wrapper = wrapper.wrapper
+    wrapper.set_wrapper(anki_wrapper)
+    yield anki_wrapper
+    wrapper.set_wrapper(original_wrapper)
 
 
 @pytest.mark.asyncio
