@@ -2,21 +2,11 @@ from fastmcp import FastMCP
 
 from anki_connect_server.config import Config
 from anki_connect_server.anki_wrapper import AnkiWrapper
-
-
-def get_wrapper() -> AnkiWrapper:
-    Config.validate()
-    return AnkiWrapper(Config.COLLECTION_PATH)
-
-
-_wrapper = None
+from anki_connect_server import api
 
 
 def get_anki_wrapper() -> AnkiWrapper:
-    global _wrapper
-    if _wrapper is None:
-        _wrapper = get_wrapper()
-    return _wrapper
+    return api.get_anki_wrapper()
 
 
 mcp = FastMCP(

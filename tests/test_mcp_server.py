@@ -24,12 +24,12 @@ def api_wrapper():
 
 @pytest.fixture(autouse=True)
 def patch_api_wrapper(api_wrapper):
-    """Auto-patch the global wrapper in mcp_server for each test."""
-    from anki_connect_server import mcp_server
-    original_wrapper = mcp_server._wrapper
-    mcp_server._wrapper = api_wrapper
+    """Auto-patch the global wrapper in api for each test."""
+    from anki_connect_server import api
+    original_wrapper = api.wrapper
+    api.wrapper = api_wrapper
     yield api_wrapper
-    mcp_server._wrapper = original_wrapper
+    api.wrapper = original_wrapper
 
 
 class TestMCPWrapper:

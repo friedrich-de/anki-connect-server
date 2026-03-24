@@ -67,7 +67,7 @@ class TestSyncServer:
         2. The AnkiWrapper can connect to it
         3. sync_status returns valid response
         """
-        from api.handlers import handle_sync_status
+        from anki_connect_server.handlers import handle_sync_status
 
         wrapper, endpoint = sync_anki_wrapper
         result = await handle_sync_status(wrapper, {
@@ -86,7 +86,7 @@ class TestSyncServer:
         1. The sync server accepts connections
         2. AnkiWrapper.sync_to_ankiweb works with custom credentials
         """
-        from api.handlers import handle_sync
+        from anki_connect_server.handlers import handle_sync
 
         wrapper, endpoint = sync_anki_wrapper
         result = await handle_sync(wrapper, {
@@ -108,7 +108,7 @@ class TestSyncServer:
     @pytest.mark.asyncio
     async def test_sync_media_only(self, sync_anki_wrapper):
         """Test sync_media_only with sync server credentials."""
-        from api.handlers import handle_sync_media
+        from anki_connect_server.handlers import handle_sync_media
 
         wrapper, endpoint = sync_anki_wrapper
         result = await handle_sync_media(wrapper, {

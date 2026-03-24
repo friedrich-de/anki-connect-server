@@ -292,11 +292,11 @@ async def health():
 
 @api_app.post("/", response_model=AnkiConnectResponse)
 async def handle_request(req: AnkiConnectRequest):
-    if not wrapper:
+    if not get_anki_wrapper():
         return {"result": None, "error": "Server not initialized"}
 
     try:
-        result = await dispatch(req.action, req.params, wrapper)
+        result = await dispatch(req.action, req.params, get_anki_wrapper())
         return {"result": result, "error": None}
     except Exception as e:
         return {"result": None, "error": str(e)}
