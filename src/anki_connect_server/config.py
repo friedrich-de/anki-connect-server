@@ -21,5 +21,7 @@ class Config(BaseSettings):
 
     ANKIWEB_URL: Optional[str] = None
 
+    FULL_UPLOAD: bool = False
+
 
 config = Config().model_validate({})

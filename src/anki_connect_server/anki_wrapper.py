@@ -54,11 +54,16 @@ class AnkiWrapper:
                 )
                 self.col = Collection(self.collection_path)
             elif result.required == 4:
-                self.col.close_for_full_sync()
-                self.col.full_upload_or_download(
-                    auth=auth, server_usn=result.server_media_usn, upload=True
-                )
-                self.col = Collection(self.collection_path)
+                if config.FULL_UPLOAD:
+                    self.col.close_for_full_sync()
+                    self.col.full_upload_or_download(
+                        auth=auth, server_usn=result.server_media_usn, upload=True
+                    )
+                    self.col = Collection(self.collection_path)
+                else:
+                    logger.warning("Full upload required but FULL_UPLOAD=false, skipping")
+                    self.col.close()
+                    self.col = Collection(self.collection_path)
             else:
                 self.col.close()
                 self.col = Collection(self.collection_path)
