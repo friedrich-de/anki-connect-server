@@ -1,90 +1,179 @@
 # AnkiConnect Server
 
-Headless AnkiConnect-compatible REST API server with AnkiWeb sync support.
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 
-## Features
+Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MCP server integration.
 
-- Full AnkiConnect API compatibility (version 6)
-- Headless operation - no Qt/GUI required
-- AnkiWeb sync support
-- Custom sync server support (optional)
-- Built with FastAPI and uvicorn
+## ❓ Problem & Solution
 
-## Requirements
+**Problem:** Traditional AnkiConnect requires the Anki desktop app running, works only on localhost, and can't be deployed to servers.
 
-- Python 3.9+
-- uv (package manager)
+**Solution:** This headless server provides direct collection access without Anki desktop, supports remote deployment, and includes automatic AnkiWeb sync.
 
-## Installation
+
+## ✨ Features
+
+- **Server Deployment** - Run on VPS, Raspberry Pi, or cloud without GUI
+- **AI Integration** - MCP server for AI assistant access to your cards
+- **Full AnkiConnect API Compatibility** - Version 6 API with all standard actions
+- **Headless Operation** - No Qt/GUI required, perfect for servers and containers
+- **AnkiWeb Sync** - Automatic synchronization with AnkiWeb (optional)
+- **Custom Sync Server** - Support for self-hosted Anki sync servers
+- **MCP Server** - Model Context Protocol integration for AI assistants
+
+## 📋 Table of Contents
+
+- [Requirements](#-requirements)
+- [Installation](#-installation)
+- [Configuration](#-configuration)
+- [Usage](#-usage)
+- [API Reference](#-api-reference)
+- [MCP Server](#-mcp-server)
+- [Docker](#-docker)
+- [Docker](#-docker)
+
+## 🔧 Requirements
+
+- Python 3.12+
+- [uv](https://github.com/astral-sh/uv) package manager
+- Anki collection file (`.anki21`)
+
+## 📦 Installation
+
+### Quick Install
 
 ```bash
-# Clone and install dependencies
+# Clone the repository
+git clone https://github.com/glechic/anki-connect-server.git
 cd anki-connect-server
+
+# Install with uv
 uv pip install -e .
 ```
 
-## Configuration
+### From PyPI (coming soon)
 
-Set environment variables before running:
+```bash
+pip install anki-connect-server
+```
+
+## ⚙️ Configuration
+
+Set environment variables before running the server:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANKI_COLLECTION_PATH` | Yes | - | Path to `.anki21` collection file |
-| `ANKICONNECT_PORT` | No | 8765 | Server port |
-| `ANKICONNECT_BIND` | No | 127.0.0.1 | Bind address |
-| `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (for sync) |
-| `ANKICONNECT_ANKIWEB_PASS` | No | - | AnkiWeb password (for sync) |
-| `ANKIWEB_URL` | No | - | Custom sync server URL (default: AnkiWeb) |
+| `ANKI_COLLECTION_PATH` | **Yes** | - | Path to your `.anki21` collection file |
+| `ANKICONNECT_PORT` | No | `8765` | Server port |
+| `ANKICONNECT_BIND` | No | `127.0.0.1` | Bind address (use `0.0.0.0` for external access) |
+| `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (required for sync) |
+| `ANKICONNECT_ANKIWEB_PASS` | No | - | AnkiWeb password (required for sync) |
+| `ANKIWEB_URL` | No | - | Custom sync server URL (optional) |
+| `ANKICONNECT_FULL_UPLOAD` | No | `false` | Allow full upload on sync conflict |
 
-## Usage
-
-### Development
-
-```bash
-uv run uvicorn main:app --reload --port 8765
-```
-
-### Production
+### Example `.env` File
 
 ```bash
-uv run uvicorn main:app --host 0.0.0.0 --port 8765
+# Required: Path to your Anki collection
+ANKI_COLLECTION_PATH=/path/to/collection.anki21
+
+# Optional: Server configuration
+ANKICONNECT_PORT=8765
+ANKICONNECT_BIND=127.0.0.1
+
+# Optional: AnkiWeb sync credentials
+ANKICONNECT_ANKIWEB_USER=your@email.com
+ANKICONNECT_ANKIWEB_PASS=your_password
+
+# Optional: Custom sync server
+# ANKIWEB_URL=https://your-sync-server.com
 ```
 
-### Docker
+> ⚠️ **Security Warning**: Store credentials securely. Never commit `.env` files to version control.
 
-```dockerfile
-FROM python:3.11-slim
-RUN pip install uv
-WORKDIR /app
-COPY . .
-RUN uv pip install --system -e .
-ENV ANKI_COLLECTION_PATH=/data/collection.anki21
-EXPOSE 8765
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8765"]
-```
+## 🚀 Usage
 
-## API Examples
-
-### Get deck names
+### Development Server
 
 ```bash
-curl -X POST http://localhost:8765 \
+uv run uvicorn anki_connect_server.api:app --reload --port 8765
+```
+
+### Production Server
+
+```bash
+uv run uvicorn anki_connect_server.api:app --host 0.0.0.0 --port 8765
+```
+
+### Using the CLI
+
+```bash
+# Start the API server
+uv run server
+
+# Start the MCP server
+uv run mcp-server
+```
+
+## 📚 API Reference
+
+The server exposes a single POST endpoint at `/api` that accepts AnkiConnect-style JSON requests.
+
+### Request Format
+
+```json
+{
+  "action": "actionName",
+  "version": 6,
+  "params": {
+    "param1": "value1",
+    "param2": "value2"
+  }
+}
+```
+
+### Response Format
+
+```json
+{
+  "result": <action_result>,
+  "error": null
+}
+```
+
+On error:
+
+```json
+{
+  "result": null,
+  "error": "Error message"
+}
+```
+
+### Examples
+
+#### Get Deck Names
+
+```bash
+curl -X POST http://localhost:8765/api \
   -H "Content-Type: application/json" \
   -d '{"action": "deckNames", "version": 6}'
 ```
 
-### Create a deck
+#### Create a Deck
 
 ```bash
-curl -X POST http://localhost:8765 \
+curl -X POST http://localhost:8765/api \
   -H "Content-Type: application/json" \
   -d '{"action": "createDeck", "version": 6, "params": {"deck": "My New Deck"}}'
 ```
 
-### Add a note
+#### Add a Note
 
 ```bash
-curl -X POST http://localhost:8765 \
+curl -X POST http://localhost:8765/api \
   -H "Content-Type: application/json" \
   -d '{
     "action": "addNote",
@@ -103,39 +192,171 @@ curl -X POST http://localhost:8765 \
   }'
 ```
 
-### Sync with AnkiWeb
+#### Sync with AnkiWeb
 
 ```bash
-curl -X POST http://localhost:8765 \
+curl -X POST http://localhost:8765/api \
   -H "Content-Type: application/json" \
   -d '{"action": "sync", "version": 6}'
 ```
 
-## Supported Actions
+#### Batch Multiple Actions
 
-### Misc
-- `version`, `sync`, `multi`, `importPackage`, `exportPackage`
+```bash
+curl -X POST http://localhost:8765/api \
+  -H "Content-Type: application/json" \
+  -d '{
+    "action": "multi",
+    "version": 6,
+    "params": {
+      "actions": [
+        {"action": "deckNames", "params": {}},
+        {"action": "modelNames", "params": {}}
+      ]
+    }
+  }'
+```
 
-### Decks
-- `deckNames`, `deckNamesAndIds`, `createDeck`, `deleteDecks`, `changeDeck`
-- `getDeckConfig`, `saveDeckConfig`, `setDeckConfigId`, `cloneDeckConfigId`, `removeDeckConfigId`
+### Supported Actions
 
-### Models
-- `modelNames`, `modelNamesAndIds`, `modelFieldNames`, `modelFieldsOnTemplates`
-- `createModel`, `modelTemplates`, `modelStyling`, `updateModelTemplates`, `updateModelStyling`
+#### Misc
+- `version` - Get API version
+- `sync` - Sync with AnkiWeb
+- `syncStatus` - Get sync status
+- `syncMedia` - Sync media only
+- `multi` - Execute multiple actions
+- `importPackage` - Import `.apkg` file
+- `exportPackage` - Export deck to `.apkg`
 
-### Notes
-- `addNote`, `addNotes`, `canAddNotes`, `updateNoteFields`
-- `findNotes`, `notesInfo`, `deleteNotes`
-- `addTags`, `removeTags`, `getTags`
+#### Decks
+- `deckNames` - Get all deck names
+- `deckNamesAndIds` - Get deck names with IDs
+- `createDeck` - Create a new deck
+- `deleteDecks` - Delete decks
+- `changeDeck` - Move cards to different deck
+- `getDecks` - Get decks for cards
+- `getDeckConfig` - Get deck configuration
+- `saveDeckConfig` - Save deck configuration
+- `setDeckConfigId` - Assign config to decks
+- `cloneDeckConfigId` - Clone deck config
+- `removeDeckConfigId` - Remove deck config
 
-### Cards
-- `findCards`, `cardsToNotes`, `cardsInfo`
-- `suspend`, `unsuspend`, `areSuspended`, `areDue`, `getIntervals`
+#### Models
+- `modelNames` - Get all model names
+- `modelNamesAndIds` - Get model names with IDs
+- `modelFieldNames` - Get field names for model
+- `modelFieldsOnTemplates` - Get fields used in templates
+- `createModel` - Create a new note model
+- `modelTemplates` - Get card templates
+- `modelStyling` - Get CSS styling
+- `updateModelTemplates` - Update templates
+- `updateModelStyling` - Update CSS
 
-### Media
-- `storeMediaFile`, `retrieveMediaFile`, `deleteMediaFile`, `getMediaDirPath`
+#### Notes
+- `addNote` - Add a single note
+- `addNotes` - Add multiple notes
+- `canAddNotes` - Check if notes can be added
+- `updateNoteFields` - Update note fields
+- `findNotes` - Search for notes
+- `notesInfo` - Get note details
+- `deleteNotes` - Delete notes
+- `addTags` - Add tags to notes
+- `removeTags` - Remove tags from notes
+- `getTags` - Get all tags
 
-## License
+#### Cards
+- `findCards` - Search for cards
+- `cardsToNotes` - Get note IDs from card IDs
+- `cardsInfo` - Get card details
+- `suspend` - Suspend cards
+- `unsuspend` - Unsuspend cards
+- `areSuspended` - Check if cards are suspended
+- `areDue` - Check if cards are due
+- `getIntervals` - Get card intervals
 
-GNU AGPL v3
+#### Media
+- `getMediaDirPath` - Get media directory path
+- `storeMediaFile` - Store a media file (base64)
+- `retrieveMediaFile` - Retrieve a media file
+- `deleteMediaFile` - Delete a media file
+
+## 🤖 MCP Server
+
+The server includes a Model Context Protocol (MCP) integration for AI assistants.
+
+### Starting the MCP Server
+
+```bash
+uv run mcp-server
+```
+
+### Available MCP Tools
+
+- `get_deck_names` - Get all deck names
+- `get_deck_names_and_ids` - Get decks with IDs
+- `create_deck` - Create a new deck
+- `delete_decks` - Delete decks
+- `get_model_names` - Get all model names
+- `get_model_field_names` - Get fields for a model
+- `add_note` - Add a new note
+- `find_notes` - Search for notes
+- `get_notes_info` - Get note details
+- `delete_notes` - Delete notes
+- `find_cards` - Search for cards
+- `get_cards_info` - Get card details
+- `suspend_cards` / `unsuspend_cards` - Manage card suspension
+- `are_suspended` / `are_due` - Check card status
+- `get_card_intervals` - Get card intervals
+- `get_all_tags` - Get all tags
+- `add_tags` / `remove_tags` - Manage tags
+- `get_media_dir_path` - Get media directory
+- `store_media_file` / `retrieve_media_file` / `delete_media_file` - Media operations
+- `change_deck` - Move cards between decks
+- `cards_to_notes` - Convert card IDs to note IDs
+- `get_deck_config` - Get deck configuration
+- `get_model_templates` / `get_model_styling` - Model customization
+- `get_api_version` - Get API version
+- `import_package` / `export_package` - Import/export decks
+- `sync` / `sync_media` / `get_sync_status` - Sync operations
+
+## 🐳 Docker
+
+### Building the Image
+
+```bash
+docker build -t anki-connect-server .
+```
+
+### Running the Container
+
+```bash
+docker run -d \
+  -p 8765:8765 \
+  -v /path/to/collection.anki21:/data/collection.anki21 \
+  -e ANKI_COLLECTION_PATH=/data/collection.anki21 \
+  -e ANKICONNECT_ANKIWEB_USER=your@email.com \
+  -e ANKICONNECT_ANKIWEB_PASS=your_password \
+  --name anki-connect-server \
+  anki-connect-server
+```
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+
+services:
+  anki-connect-server:
+    build: .
+    ports:
+      - "8765:8765"
+    volumes:
+      - ./collection.anki21:/data/collection.anki21
+    environment:
+      - ANKI_COLLECTION_PATH=/data/collection.anki21
+      - ANKICONNECT_ANKIWEB_USER=${ANKIWEB_USER}
+      - ANKICONNECT_ANKIWEB_PASS=${ANKIWEB_PASS}
+    restart: unless-stopped
+```
+
+
