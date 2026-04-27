@@ -134,6 +134,13 @@ uv run server
 uv run mcp-server
 ```
 
+### MCP Server with uvx
+
+```bash
+# Run MCP server without installation
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx --from anki-connect-server mcp-server
+```
+
 ## 📚 API Reference
 
 The server exposes a single POST endpoint at `/api` that accepts AnkiConnect-style JSON requests.
@@ -335,6 +342,24 @@ uv run mcp-server
 - `get_api_version` - Get API version
 - `import_package` / `export_package` - Import/export decks
 - `sync` / `sync_media` / `get_sync_status` - Sync operations
+
+### Adding to Claude Desktop
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "anki-connect-server": {
+      "command": "uvx",
+      "args": ["--from", "anki-connect-server", "mcp-server"],
+      "env": {
+        "ANKI_COLLECTION_PATH": "/path/to/collection.anki21"
+      }
+    }
+  }
+}
+```
 
 ## 🐳 Docker
 

@@ -54,7 +54,7 @@ async def handle_request(req: AnkiConnectRequest):
 
 
 def run_server():
-    """Run the FastAPI server using uvicorn."""
+    """Run the FastAPI server."""
     import uvicorn
     uvicorn.run(app, host=config.BIND, port=config.PORT)
 
