@@ -53,6 +53,11 @@ async def handle_request(req: AnkiConnectRequest):
         return {"result": None, "error": str(e)}
 
 
-if __name__ == "__main__":
+def run_server():
+    """Run the FastAPI server using uvicorn."""
     import uvicorn
     uvicorn.run(app, host=config.BIND, port=config.PORT)
+
+
+if __name__ == "__main__":
+    run_server()

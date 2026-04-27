@@ -2,6 +2,7 @@
 
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI](https://img.shields.io/pypi/v/anki-connect-server.svg)](https://pypi.org/project/anki-connect-server/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 
 Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MCP server integration.
@@ -52,10 +53,14 @@ cd anki-connect-server
 uv pip install -e .
 ```
 
-### From PyPI (coming soon)
+### From PyPI
 
 ```bash
+# Install the package
 pip install anki-connect-server
+
+# Or run directly with uvx (no installation needed)
+uvx anki-connect-server
 ```
 
 ## ⚙️ Configuration
@@ -93,6 +98,19 @@ ANKICONNECT_ANKIWEB_PASS=your_password
 > ⚠️ **Security Warning**: Store credentials securely. Never commit `.env` files to version control.
 
 ## 🚀 Usage
+
+### Quick Start with uvx (No Installation)
+
+```bash
+# Run the API server directly
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server
+
+# Or with sync enabled
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_ANKIWEB_USER=user \
+ANKICONNECT_ANKIWEB_PASS=pass \
+uvx anki-connect-server
+```
 
 ### Development Server
 
