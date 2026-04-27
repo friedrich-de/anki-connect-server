@@ -6,8 +6,8 @@ from anki_connect_server.anki_wrapper import AnkiWrapper
 
 
 def get_wrapper() -> AnkiWrapper:
-    Config.model_validate({})
-    return AnkiWrapper(Config.COLLECTION_PATH)
+    config = Config()
+    return AnkiWrapper(config.COLLECTION_PATH)
 
 
 def init_wrapper():
