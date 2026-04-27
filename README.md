@@ -26,42 +26,11 @@ Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MC
 
 ## 📋 Table of Contents
 
-- [Requirements](#-requirements)
-- [Installation](#-installation)
 - [Configuration](#-configuration)
 - [Usage](#-usage)
 - [API Reference](#-api-reference)
 - [MCP Server](#-mcp-server)
 - [Docker](#-docker)
-
-## 🔧 Requirements
-
-- Python 3.12+
-- [uv](https://github.com/astral-sh/uv) package manager
-- Anki collection file (`.anki21`)
-
-## 📦 Installation
-
-### Quick Install
-
-```bash
-# Clone the repository
-git clone https://github.com/glechic/anki-connect-server.git
-cd anki-connect-server
-
-# Install with uv
-uv pip install -e .
-```
-
-### From PyPI
-
-```bash
-# Install the package
-pip install anki-connect-server
-
-# Or run directly with uvx (no installation needed)
-uvx anki-connect-server
-```
 
 ## ⚙️ Configuration
 
@@ -102,14 +71,11 @@ ANKICONNECT_ANKIWEB_PASS=your_password
 ### Quick Start with uvx (No Installation)
 
 ```bash
-# Run the API server directly
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server
+# Run the API server
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server api
 
-# Or with sync enabled
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
-ANKICONNECT_ANKIWEB_USER=user \
-ANKICONNECT_ANKIWEB_PASS=pass \
-uvx anki-connect-server
+# Run the MCP server
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server mcp
 ```
 
 ### Development Server
@@ -127,18 +93,14 @@ uv run uvicorn anki_connect_server.api:app --host 0.0.0.0 --port 8765
 ### Using the CLI
 
 ```bash
+# Show help
+uvx anki-connect-server --help
+
 # Start the API server
-uv run server
+uvx anki-connect-server api
 
 # Start the MCP server
-uv run mcp-server
-```
-
-### MCP Server with uvx
-
-```bash
-# Run MCP server without installation
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx --from anki-connect-server mcp-server
+uvx anki-connect-server mcp
 ```
 
 ## 📚 API Reference
@@ -352,7 +314,7 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "anki-connect-server": {
       "command": "uvx",
-      "args": ["--from", "anki-connect-server", "mcp-server"],
+      "args": ["anki-connect-server", "mcp"],
       "env": {
         "ANKI_COLLECTION_PATH": "/path/to/collection.anki21"
       }
