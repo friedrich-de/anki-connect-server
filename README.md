@@ -2,7 +2,7 @@
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/anki-connect-server.svg)](https://pypi.org/project/anki-connect-server/)
-[![Docker](https://img.shields.io/docker/v/your-docker-username/anki-connect-server)](https://hub.docker.com/r/your-docker-username/anki-connect-server)
+[![Docker](https://img.shields.io/docker/v/glechic/anki-connect-server)](https://hub.docker.com/r/glechic/anki-connect-server)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
 
 Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MCP server integration.
@@ -318,7 +318,7 @@ docker run -d \
   -e ANKICONNECT_ANKIWEB_USER=your@email.com \
   -e ANKICONNECT_ANKIWEB_PASS=your_password \
   --name anki-connect-server \
-  your-docker-username/anki-connect-server:latest
+  glechic/anki-connect-server:latest
 ```
 
 ### Docker Compose
@@ -328,7 +328,7 @@ version: '3.8'
 
 services:
   anki-connect-server:
-    image: your-docker-username/anki-connect-server:latest
+    image: glechic/anki-connect-server:latest
     ports:
       - "8765:8765"
     volumes:
