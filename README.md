@@ -1,6 +1,5 @@
 # AnkiConnect Server
 
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/anki-connect-server.svg)](https://pypi.org/project/anki-connect-server/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
@@ -21,7 +20,6 @@ Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MC
 - **Full AnkiConnect API Compatibility** - Version 6 API with all standard actions
 - **Headless Operation** - No Qt/GUI required, perfect for servers and containers
 - **AnkiWeb Sync** - Automatic synchronization with AnkiWeb (optional)
-- **Custom Sync Server** - Support for self-hosted Anki sync servers
 - **MCP Server** - Model Context Protocol integration for AI assistants
 
 ## 📋 Table of Contents
@@ -61,10 +59,8 @@ ANKICONNECT_ANKIWEB_USER=your@email.com
 ANKICONNECT_ANKIWEB_PASS=your_password
 
 # Optional: Custom sync server
-# ANKIWEB_URL=https://your-sync-server.com
+ANKIWEB_URL=https://your-sync-server.com
 ```
-
-> ⚠️ **Security Warning**: Store credentials securely. Never commit `.env` files to version control.
 
 ## 🚀 Usage
 
@@ -72,47 +68,16 @@ ANKICONNECT_ANKIWEB_PASS=your_password
 
 ```bash
 # Run the API server
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server api
-
-# Run with AnkiWeb sync enabled
 ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server api
 
 # Run the MCP server
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server mcp
-```
-
-### Development Server
-
-```bash
-uv run uvicorn anki_connect_server.api:app --reload --port 8765
-```
-
-### Production Server
-
-```bash
-uv run uvicorn anki_connect_server.api:app --host 0.0.0.0 --port 8765
-```
-
-### Using the CLI
-
-```bash
-# Show help
-uvx anki-connect-server --help
-
-# Start the API server
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server api
-
-# Start the API server with sync
 ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
-uvx anki-connect-server api
-
-# Start the MCP server
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server mcp
+uvx anki-connect-server mcp
 ```
 
 ## 📚 API Reference
@@ -285,10 +250,6 @@ The server includes a Model Context Protocol (MCP) integration for AI assistants
 ### Starting the MCP Server
 
 ```bash
-# With uvx (no installation)
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server mcp
-
-# With sync enabled
 ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
