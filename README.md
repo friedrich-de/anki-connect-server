@@ -74,6 +74,12 @@ ANKICONNECT_ANKIWEB_PASS=your_password
 # Run the API server
 ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server api
 
+# Run with AnkiWeb sync enabled
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_ANKIWEB_USER=your@email.com \
+ANKICONNECT_ANKIWEB_PASS=your_password \
+uvx anki-connect-server api
+
 # Run the MCP server
 ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server mcp
 ```
