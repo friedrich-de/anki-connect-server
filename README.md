@@ -103,10 +103,16 @@ uv run uvicorn anki_connect_server.api:app --host 0.0.0.0 --port 8765
 uvx anki-connect-server --help
 
 # Start the API server
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server api
+
+# Start the API server with sync
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_ANKIWEB_USER=your@email.com \
+ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server api
 
 # Start the MCP server
-uvx anki-connect-server mcp
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server mcp
 ```
 
 ## 📚 API Reference
@@ -279,7 +285,14 @@ The server includes a Model Context Protocol (MCP) integration for AI assistants
 ### Starting the MCP Server
 
 ```bash
-uv run mcp-server
+# With uvx (no installation)
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 uvx anki-connect-server mcp
+
+# With sync enabled
+ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_ANKIWEB_USER=your@email.com \
+ANKICONNECT_ANKIWEB_PASS=your_password \
+uvx anki-connect-server mcp
 ```
 
 ### Available MCP Tools
@@ -322,7 +335,9 @@ Add to your `claude_desktop_config.json`:
       "command": "uvx",
       "args": ["anki-connect-server", "mcp"],
       "env": {
-        "ANKI_COLLECTION_PATH": "/path/to/collection.anki21"
+        "ANKI_COLLECTION_PATH": "/path/to/collection.anki21",
+        "ANKICONNECT_ANKIWEB_USER": "your@email.com",
+        "ANKICONNECT_ANKIWEB_PASS": "your_password"
       }
     }
   }
