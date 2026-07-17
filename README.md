@@ -148,13 +148,16 @@ Build the image from this checkout:
 docker build --tag anki-connect-server:local .
 mkdir -p anki-data
 docker run --rm \
-  --publish 8765:8765 \
+  --publish 127.0.0.1:8765:8765 \
   --volume "$PWD/anki-data:/data" \
   anki-connect-server:local
 ```
 
 Mounting the full `/data` directory persists the collection and its media. The image defaults to
 `ANKICONNECT_COLLECTION_PATH=/data/collection.anki2` and creates the collection when necessary.
+The published port is bound to host loopback, so it is available only to local clients and reverse
+proxies running on the host. Keep `ANKICONNECT_BIND=0.0.0.0` inside the container so that container
+port forwarding can reach the server.
 
 An equivalent Compose service uses the local Dockerfile:
 
@@ -163,7 +166,7 @@ services:
   anki-connect-server:
     build: .
     ports:
-      - "8765:8765"
+      - "127.0.0.1:8765:8765"
     volumes:
       - ./anki-data:/data
     restart: unless-stopped

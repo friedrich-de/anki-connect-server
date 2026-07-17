@@ -5,6 +5,15 @@ from fastmcp import Context, FastMCP
 
 from anki_connect_server import ANKICONNECT_API_VERSION
 from anki_connect_server.anki_wrapper import AnkiWrapper, WrapperFactory, create_anki_wrapper
+from anki_connect_server.tool_metadata import (
+    ADDITIVE_WRITE,
+    DESTRUCTIVE_IDEMPOTENT_WRITE,
+    DESTRUCTIVE_OPEN_WORLD_WRITE,
+    IDEMPOTENT_WRITE,
+    READ_ONLY,
+    READ_ONLY_OPEN_WORLD,
+    SERVER_INSTRUCTIONS,
+)
 from anki_connect_server.types import JsonObject, JsonValue, NoteInput
 
 type AnkiMcpServer = FastMCP[dict[str, AnkiWrapper]]
@@ -224,41 +233,41 @@ def get_sync_status(context: Context) -> JsonObject:
 
 
 def _register_tools(server: AnkiMcpServer) -> None:
-    server.tool(get_deck_names)
-    server.tool(get_deck_names_and_ids)
-    server.tool(create_deck)
-    server.tool(delete_decks)
-    server.tool(get_model_names)
-    server.tool(get_model_field_names)
-    server.tool(add_note)
-    server.tool(find_notes)
-    server.tool(get_notes_info)
-    server.tool(delete_notes)
-    server.tool(find_cards)
-    server.tool(get_cards_info)
-    server.tool(suspend_cards)
-    server.tool(unsuspend_cards)
-    server.tool(are_suspended)
-    server.tool(are_due)
-    server.tool(get_card_intervals)
-    server.tool(get_all_tags)
-    server.tool(add_tags)
-    server.tool(remove_tags)
-    server.tool(get_media_dir_path)
-    server.tool(change_deck)
-    server.tool(cards_to_notes)
-    server.tool(get_deck_config)
-    server.tool(get_model_templates)
-    server.tool(get_model_styling)
-    server.tool(get_api_version)
-    server.tool(store_media_file)
-    server.tool(retrieve_media_file)
-    server.tool(delete_media_file)
-    server.tool(import_package)
-    server.tool(export_package)
-    server.tool(sync)
-    server.tool(sync_media)
-    server.tool(get_sync_status)
+    server.tool(get_deck_names, annotations=READ_ONLY)
+    server.tool(get_deck_names_and_ids, annotations=READ_ONLY)
+    server.tool(create_deck, annotations=IDEMPOTENT_WRITE)
+    server.tool(delete_decks, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
+    server.tool(get_model_names, annotations=READ_ONLY)
+    server.tool(get_model_field_names, annotations=READ_ONLY)
+    server.tool(add_note, annotations=ADDITIVE_WRITE)
+    server.tool(find_notes, annotations=READ_ONLY)
+    server.tool(get_notes_info, annotations=READ_ONLY)
+    server.tool(delete_notes, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
+    server.tool(find_cards, annotations=READ_ONLY)
+    server.tool(get_cards_info, annotations=READ_ONLY)
+    server.tool(suspend_cards, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
+    server.tool(unsuspend_cards, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
+    server.tool(are_suspended, annotations=READ_ONLY)
+    server.tool(are_due, annotations=READ_ONLY)
+    server.tool(get_card_intervals, annotations=READ_ONLY)
+    server.tool(get_all_tags, annotations=READ_ONLY)
+    server.tool(add_tags, annotations=IDEMPOTENT_WRITE)
+    server.tool(remove_tags, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
+    server.tool(get_media_dir_path, annotations=READ_ONLY)
+    server.tool(change_deck, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
+    server.tool(cards_to_notes, annotations=READ_ONLY)
+    server.tool(get_deck_config, annotations=READ_ONLY)
+    server.tool(get_model_templates, annotations=READ_ONLY)
+    server.tool(get_model_styling, annotations=READ_ONLY)
+    server.tool(get_api_version, annotations=READ_ONLY)
+    server.tool(store_media_file, annotations=IDEMPOTENT_WRITE)
+    server.tool(retrieve_media_file, annotations=READ_ONLY)
+    server.tool(delete_media_file, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
+    server.tool(import_package, annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
+    server.tool(export_package, annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
+    server.tool(sync, annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
+    server.tool(sync_media, annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
+    server.tool(get_sync_status, annotations=READ_ONLY_OPEN_WORLD)
 
 
 def create_mcp_server(wrapper_factory: WrapperFactory = create_anki_wrapper) -> AnkiMcpServer:
@@ -270,7 +279,11 @@ def create_mcp_server(wrapper_factory: WrapperFactory = create_anki_wrapper) -> 
         finally:
             anki_wrapper.close()
 
-    server = FastMCP(name="Anki Connect MCP Server", lifespan=lifespan)
+    server = FastMCP(
+        name="Anki Connect MCP Server",
+        instructions=SERVER_INSTRUCTIONS,
+        lifespan=lifespan,
+    )
     _register_tools(server)
     return server
 
