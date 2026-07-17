@@ -21,12 +21,16 @@
   "waitFor": "postCreateCommand",
   "forwardPorts": [
     8765,
+    8080,
     6274,
     6277
   ],
   "portsAttributes": {
     "8765": {
       "label": "AnkiConnect API"
+    },
+    "8080": {
+      "label": "OpenAI MCP Tunnel"
     },
     "6274": {
       "label": "MCP Inspector"

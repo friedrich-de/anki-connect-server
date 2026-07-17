@@ -10,6 +10,7 @@ collection directly, so the desktop application does not need to be running.
 
 - AnkiConnect-compatible JSON API at `POST /`
 - MCP tools for decks, models, notes, cards, media, packages, and synchronization
+- Outbound-only OpenAI Secure MCP Tunnel support for the stdio MCP server
 - Direct headless access to an Anki collection without Qt
 - On-demand collection and media synchronization with AnkiWeb
 - Local Docker image and persistent data-directory support
@@ -28,11 +29,12 @@ uv sync --locked
 cp .env.example .env
 ```
 
-Set `ANKICONNECT_COLLECTION_PATH` in `.env`, then start either interface:
+Set `ANKICONNECT_COLLECTION_PATH` in `.env`, then start any interface:
 
 ```bash
 uv run anki-connect-server api
 uv run anki-connect-server mcp
+uv run anki-connect-server tunnel
 ```
 
 Do not open the same collection concurrently in this server and another Anki process.
@@ -48,6 +50,9 @@ Do not open the same collection concurrently in this server and another Anki pro
 | `ANKICONNECT_ANKIWEB_PASS` | For sync | — | AnkiWeb password |
 | `ANKICONNECT_ANKIWEB_URL` | No | AnkiWeb | Custom sync-server URL |
 | `ANKICONNECT_FULL_UPLOAD` | No | `false` | Permit a full upload when AnkiWeb requests one |
+| `CONTROL_PLANE_TUNNEL_ID` | For tunnel | — | OpenAI Secure MCP Tunnel ID |
+| `CONTROL_PLANE_API_KEY` | For tunnel | — | Runtime API key with Tunnels Read + Use |
+| `TUNNEL_CLIENT_PATH` | No | `tunnel-client` | Tunnel client executable name or path |
 
 The API has no authentication layer. Keep it bound to a trusted interface or place it behind an
 authenticated reverse proxy with TLS.
@@ -140,6 +145,37 @@ For a local MCP host, point the configuration at this source checkout:
 }
 ```
 
+## OpenAI Secure MCP Tunnel
+
+The `tunnel` command makes the stdio MCP server reachable through OpenAI's outbound-only
+[Secure MCP Tunnel](https://developers.openai.com/api/docs/guides/secure-mcp-tunnels). It loads
+the tunnel ID and runtime key from `.env`, keeps the key out of command-line arguments, and lets
+the official `tunnel-client` supervise `anki-connect-server mcp` as its private MCP process.
+
+The devcontainer and local Docker image include a checksum-verified, pinned release of the
+official client. For a source checkout outside those containers, download `tunnel-client` from
+the [official releases](https://github.com/openai/tunnel-client/releases/latest), put it on
+`PATH`, or set `TUNNEL_CLIENT_PATH` to the executable.
+
+Add the credentials created in OpenAI Platform tunnel settings to `.env`:
+
+```dotenv
+CONTROL_PLANE_TUNNEL_ID=tunnel_0123456789abcdef0123456789abcdef
+CONTROL_PLANE_API_KEY=your_runtime_api_key
+```
+
+Validate the local command, credentials, permissions, and control-plane connection first, then
+start the foreground tunnel daemon:
+
+```bash
+uv run anki-connect-server tunnel --doctor
+uv run anki-connect-server tunnel
+```
+
+Keep the second command running for connector discovery and tool calls. The tunnel-client health
+and administration UI uses `http://127.0.0.1:8080/ui` by default. The MCP server remains on stdio,
+and the tunnel opens no inbound internet listener; its control-plane traffic uses outbound HTTPS.
+
 ## Local Docker use
 
 Build the image from this checkout:
@@ -179,6 +215,20 @@ docker run --rm --interactive \
   --volume "$PWD/anki-data:/data" \
   anki-connect-server:local \
   anki-connect-server mcp
+```
+
+To run the OpenAI tunnel from the image, pass the tunnel credentials from `.env`, override the
+host collection path with the image's `/data` path, and optionally publish the tunnel health UI:
+
+```bash
+docker run --rm --init \
+  --env-file .env \
+  --env ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
+  --env HEALTH_LISTEN_ADDR=0.0.0.0:8080 \
+  --publish 127.0.0.1:8080:8080 \
+  --volume "$PWD/anki-data:/data" \
+  anki-connect-server:local \
+  anki-connect-server tunnel
 ```
 
 ## Development checks

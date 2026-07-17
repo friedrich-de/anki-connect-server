@@ -87,6 +87,9 @@ jobs:
       - name: Build image
         run: docker build --tag anki-connect-server:test .
 
+      - name: Smoke test tunnel-client
+        run: docker run --rm anki-connect-server:test tunnel-client --version
+
       - name: Smoke test API
         run: |
           docker run --detach --name anki-connect-server-test --publish 8765:8765 anki-connect-server:test

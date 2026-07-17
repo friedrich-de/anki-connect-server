@@ -14,12 +14,17 @@ RUN uv sync --locked --no-dev --no-install-project
 COPY src ./src
 RUN uv sync --locked --no-dev
 
+ARG TARGETARCH
+COPY scripts/install_tunnel_client.py /tmp/install_tunnel_client.py
+RUN python /tmp/install_tunnel_client.py --architecture "${TARGETARCH}" \
+    && rm /tmp/install_tunnel_client.py
+
 RUN mkdir -p /data
 
 ENV ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
     ANKICONNECT_PORT=8765 \
     ANKICONNECT_BIND=0.0.0.0
 
-EXPOSE 8765
+EXPOSE 8765 8080
 
 CMD ["anki-connect-server", "api"]
