@@ -30,39 +30,37 @@ def test_config_custom_values(tmp_path: Path) -> None:
     assert config.full_upload is True
 
 
-@pytest.mark.parametrize(
-    "environment_name",
-    ["ANKICONNECT_COLLECTION_PATH", "ANKI_COLLECTION_PATH"],
-)
-def test_collection_path_environment_aliases(
+def test_collection_path_from_canonical_environment(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    environment_name: str,
 ) -> None:
     collection_path = tmp_path / "environment.anki2"
     monkeypatch.delenv("ANKICONNECT_COLLECTION_PATH", raising=False)
-    monkeypatch.delenv("ANKI_COLLECTION_PATH", raising=False)
-    monkeypatch.setenv(environment_name, str(collection_path))
+    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", str(collection_path))
 
     assert Config().collection_path == collection_path
 
 
-def test_canonical_collection_path_takes_precedence(
+def test_legacy_collection_path_environment_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    canonical = tmp_path / "canonical.anki2"
-    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", str(canonical))
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("ANKICONNECT_COLLECTION_PATH", raising=False)
     monkeypatch.setenv("ANKI_COLLECTION_PATH", str(tmp_path / "legacy.anki2"))
 
-    assert Config().collection_path == canonical
+    with pytest.raises(ValueError, match="ANKICONNECT_COLLECTION_PATH is required"):
+        Config()
 
 
-def test_collection_path_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collection_path_is_required(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
     monkeypatch.delenv("ANKICONNECT_COLLECTION_PATH", raising=False)
-    monkeypatch.delenv("ANKI_COLLECTION_PATH", raising=False)
 
-    with pytest.raises(ValueError, match="COLLECTION_PATH is required"):
+    with pytest.raises(ValueError, match="ANKICONNECT_COLLECTION_PATH is required"):
         Config()
 
 

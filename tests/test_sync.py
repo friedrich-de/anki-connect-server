@@ -157,6 +157,5 @@ def test_missing_sync_credentials_are_reported(settings: Config) -> None:
     try:
         with pytest.raises(ValueError, match="required for sync"):
             wrapper.sync_to_ankiweb()
-        assert wrapper.get_sync_auth() is None
     finally:
         wrapper.close()

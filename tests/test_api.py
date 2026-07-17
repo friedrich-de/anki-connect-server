@@ -1,38 +1,50 @@
-from collections.abc import Iterator
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 from typing import cast
+from unittest.mock import patch
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
-from anki_connect_server import wrapper
 from anki_connect_server.anki_wrapper import AnkiWrapper
-from anki_connect_server.api import app
+from anki_connect_server.api import create_app
 from anki_connect_server.types import JsonObject
 
 
-@pytest.fixture(autouse=True)
-def initialized_app(anki_wrapper: AnkiWrapper) -> Iterator[None]:
-    original = wrapper.maybe_get_anki_wrapper()
-    wrapper.set_wrapper(anki_wrapper)
-    try:
-        yield
-    finally:
-        wrapper.set_wrapper(original)
+@asynccontextmanager
+async def _app_client(anki_wrapper: AnkiWrapper) -> AsyncGenerator[AsyncClient]:
+    application = create_app(lambda: anki_wrapper)
+    async with (
+        application.router.lifespan_context(application),
+        AsyncClient(
+            transport=ASGITransport(app=application),
+            base_url="http://test",
+        ) as client,
+    ):
+        yield client
 
 
-@pytest.mark.parametrize("path", ["/", "/api"])
 @pytest.mark.asyncio
-async def test_api_paths_support_ankiconnect_requests(path: str) -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        response = await client.post(path, json={"action": "version", "version": 6})
+async def test_root_supports_ankiconnect_requests(anki_wrapper: AnkiWrapper) -> None:
+    async with _app_client(anki_wrapper) as client:
+        response = await client.post("/", json={"action": "version", "version": 6})
 
     assert response.status_code == 200
     assert cast(JsonObject, response.json()) == {"result": 6, "error": None}
 
 
 @pytest.mark.asyncio
-async def test_health_endpoint() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+async def test_removed_api_alias_returns_not_found(anki_wrapper: AnkiWrapper) -> None:
+    async with _app_client(anki_wrapper) as client:
+        response = await client.post("/api", json={"action": "version"})
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint(anki_wrapper: AnkiWrapper) -> None:
+    async with _app_client(anki_wrapper) as client:
         response = await client.get("/health")
 
     assert response.status_code == 200
@@ -40,7 +52,7 @@ async def test_health_endpoint() -> None:
 
 
 @pytest.mark.asyncio
-async def test_api_runs_representative_action() -> None:
+async def test_api_runs_representative_action(anki_wrapper: AnkiWrapper) -> None:
     request = {
         "action": "addNote",
         "params": {
@@ -51,7 +63,7 @@ async def test_api_runs_representative_action() -> None:
             }
         },
     }
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+    async with _app_client(anki_wrapper) as client:
         response = await client.post("/", json=request)
 
     data = cast(JsonObject, response.json())
@@ -61,8 +73,10 @@ async def test_api_runs_representative_action() -> None:
 
 
 @pytest.mark.asyncio
-async def test_unknown_action_uses_ankiconnect_error_envelope() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+async def test_unknown_action_uses_ankiconnect_error_envelope(
+    anki_wrapper: AnkiWrapper,
+) -> None:
+    async with _app_client(anki_wrapper) as client:
         response = await client.post("/", json={"action": "unknown"})
 
     data = cast(JsonObject, response.json())
@@ -72,8 +86,8 @@ async def test_unknown_action_uses_ankiconnect_error_envelope() -> None:
 
 
 @pytest.mark.asyncio
-async def test_invalid_json_is_rejected() -> None:
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+async def test_invalid_json_is_rejected(anki_wrapper: AnkiWrapper) -> None:
+    async with _app_client(anki_wrapper) as client:
         response = await client.post(
             "/",
             content="not-json",
@@ -85,12 +99,22 @@ async def test_invalid_json_is_rejected() -> None:
 
 @pytest.mark.asyncio
 async def test_uninitialized_server_returns_clear_error() -> None:
-    current = wrapper.maybe_get_anki_wrapper()
-    wrapper.set_wrapper(None)
-    try:
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            response = await client.post("/", json={"action": "version"})
-    finally:
-        wrapper.set_wrapper(current)
+    application = create_app()
+    async with AsyncClient(
+        transport=ASGITransport(app=application),
+        base_url="http://test",
+    ) as client:
+        response = await client.post("/", json={"action": "version"})
 
     assert response.json() == {"result": None, "error": "Server not initialized"}
+
+
+@pytest.mark.asyncio
+async def test_lifespan_closes_wrapper(anki_wrapper: AnkiWrapper) -> None:
+    application: FastAPI = create_app(lambda: anki_wrapper)
+    with patch.object(anki_wrapper, "close") as close:
+        async with application.router.lifespan_context(application):
+            assert application.state.anki_wrapper is anki_wrapper
+
+    close.assert_called_once_with()
+    assert application.state.anki_wrapper is None

@@ -1,62 +1,57 @@
-from fastmcp import FastMCP
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
 
-from anki_connect_server import wrapper
-from anki_connect_server.anki_wrapper import AnkiWrapper
-from anki_connect_server.config import Config, get_config
+from fastmcp import Context, FastMCP
+
+from anki_connect_server import ANKICONNECT_API_VERSION
+from anki_connect_server.anki_wrapper import AnkiWrapper, WrapperFactory, create_anki_wrapper
 from anki_connect_server.types import JsonObject, JsonValue, NoteInput
 
+type AnkiMcpServer = FastMCP[dict[str, AnkiWrapper]]
 
-def get_wrapper(settings: Config | None = None) -> AnkiWrapper:
-    resolved_settings = settings or get_config()
-    return AnkiWrapper(resolved_settings.collection_path, settings=resolved_settings)
-
-
-def init_wrapper(settings: Config | None = None) -> None:
-    wrapper.set_wrapper(get_wrapper(settings))
+_WRAPPER_CONTEXT_KEY = "anki_wrapper"
 
 
-mcp = FastMCP(name="Anki Connect MCP Server")
+def _get_wrapper(context: Context) -> AnkiWrapper:
+    value = context.lifespan_context.get(_WRAPPER_CONTEXT_KEY)
+    if not isinstance(value, AnkiWrapper):
+        raise RuntimeError("Anki wrapper is not initialized")
+    return value
 
 
-@mcp.tool
-def get_deck_names() -> list[str]:
+def get_deck_names(context: Context) -> list[str]:
     """Get all deck names in the collection."""
-    return wrapper.get_anki_wrapper().deck_names()
+    return _get_wrapper(context).deck_names()
 
 
-@mcp.tool
-def get_deck_names_and_ids() -> dict[str, int]:
+def get_deck_names_and_ids(context: Context) -> dict[str, int]:
     """Get all deck names with their IDs."""
-    return wrapper.get_anki_wrapper().deck_names_and_ids()
+    return _get_wrapper(context).deck_names_and_ids()
 
 
-@mcp.tool
-def create_deck(deck: str) -> int:
+def create_deck(deck: str, context: Context) -> int:
     """Create a new deck with the given name."""
-    return wrapper.get_anki_wrapper().create_deck(deck)
+    return _get_wrapper(context).create_deck(deck)
 
 
-@mcp.tool
-def delete_decks(decks: list[str], cards_too: bool = False) -> bool:
+def delete_decks(context: Context, decks: list[str], cards_too: bool = False) -> bool:
     """Delete one or more decks and optionally their cards."""
-    wrapper.get_anki_wrapper().delete_decks(decks, cards_too)
+    _get_wrapper(context).delete_decks(decks, cards_too)
     return True
 
 
-@mcp.tool
-def get_model_names() -> list[str]:
+def get_model_names(context: Context) -> list[str]:
     """Get all note model names."""
-    return wrapper.get_anki_wrapper().model_names()
+    return _get_wrapper(context).model_names()
 
 
-@mcp.tool
-def get_model_field_names(model_name: str) -> list[str]:
+def get_model_field_names(model_name: str, context: Context) -> list[str]:
     """Get all field names for a specific model."""
-    return wrapper.get_anki_wrapper().model_field_names(model_name)
+    return _get_wrapper(context).model_field_names(model_name)
 
 
-@mcp.tool
 def add_note(
+    context: Context,
     deck_name: str,
     model_name: str,
     fields: dict[str, str],
@@ -69,194 +64,219 @@ def add_note(
         fields=fields,
         tags=list(tags or []),
     )
-    return wrapper.get_anki_wrapper().add_note(note)
+    return _get_wrapper(context).add_note(note)
 
 
-@mcp.tool
-def find_notes(query: str) -> list[int]:
+def find_notes(query: str, context: Context) -> list[int]:
     """Find notes matching the given search query."""
-    return wrapper.get_anki_wrapper().find_notes(query)
+    return _get_wrapper(context).find_notes(query)
 
 
-@mcp.tool
-def get_notes_info(notes: list[int]) -> list[JsonObject]:
+def get_notes_info(notes: list[int], context: Context) -> list[JsonObject]:
     """Get detailed information about specific notes."""
-    return wrapper.get_anki_wrapper().notes_info(notes)
+    return _get_wrapper(context).notes_info(notes)
 
 
-@mcp.tool
-def delete_notes(notes: list[int]) -> bool:
+def delete_notes(notes: list[int], context: Context) -> bool:
     """Delete notes by their IDs."""
-    wrapper.get_anki_wrapper().delete_notes(notes)
+    _get_wrapper(context).delete_notes(notes)
     return True
 
 
-@mcp.tool
-def find_cards(query: str) -> list[int]:
+def find_cards(query: str, context: Context) -> list[int]:
     """Find cards matching the given search query."""
-    return wrapper.get_anki_wrapper().find_cards(query)
+    return _get_wrapper(context).find_cards(query)
 
 
-@mcp.tool
-def get_cards_info(cards: list[int]) -> list[JsonObject]:
+def get_cards_info(cards: list[int], context: Context) -> list[JsonObject]:
     """Get detailed information about specific cards."""
-    return wrapper.get_anki_wrapper().cards_info(cards)
+    return _get_wrapper(context).cards_info(cards)
 
 
-@mcp.tool
-def suspend_cards(cards: list[int]) -> bool:
+def suspend_cards(cards: list[int], context: Context) -> bool:
     """Suspend one or more cards."""
-    return wrapper.get_anki_wrapper().suspend(cards)
+    return _get_wrapper(context).suspend(cards)
 
 
-@mcp.tool
-def unsuspend_cards(cards: list[int]) -> bool:
+def unsuspend_cards(cards: list[int], context: Context) -> bool:
     """Unsuspend one or more cards."""
-    return wrapper.get_anki_wrapper().unsuspend(cards)
+    return _get_wrapper(context).unsuspend(cards)
 
 
-@mcp.tool
-def are_suspended(cards: list[int]) -> list[bool]:
+def are_suspended(cards: list[int], context: Context) -> list[bool]:
     """Check whether cards are suspended."""
-    return wrapper.get_anki_wrapper().are_suspended(cards)
+    return _get_wrapper(context).are_suspended(cards)
 
 
-@mcp.tool
-def are_due(cards: list[int]) -> list[bool]:
+def are_due(cards: list[int], context: Context) -> list[bool]:
     """Check whether cards are due for review."""
-    return wrapper.get_anki_wrapper().are_due(cards)
+    return _get_wrapper(context).are_due(cards)
 
 
-@mcp.tool
-def get_card_intervals(cards: list[int], complete: bool = False) -> list[JsonValue]:
+def get_card_intervals(
+    context: Context,
+    cards: list[int],
+    complete: bool = False,
+) -> list[JsonValue]:
     """Get intervals for cards."""
-    return wrapper.get_anki_wrapper().get_intervals(cards, complete)
+    return _get_wrapper(context).get_intervals(cards, complete)
 
 
-@mcp.tool
-def get_all_tags() -> list[str]:
+def get_all_tags(context: Context) -> list[str]:
     """Get all tags in the collection."""
-    return wrapper.get_anki_wrapper().get_tags()
+    return _get_wrapper(context).get_tags()
 
 
-@mcp.tool
-def add_tags(notes: list[int], tags: str) -> bool:
+def add_tags(notes: list[int], tags: str, context: Context) -> bool:
     """Add tags to notes."""
-    wrapper.get_anki_wrapper().add_tags(notes, tags)
+    _get_wrapper(context).add_tags(notes, tags)
     return True
 
 
-@mcp.tool
-def remove_tags(notes: list[int], tags: str) -> bool:
+def remove_tags(notes: list[int], tags: str, context: Context) -> bool:
     """Remove tags from notes."""
-    wrapper.get_anki_wrapper().remove_tags(notes, tags)
+    _get_wrapper(context).remove_tags(notes, tags)
     return True
 
 
-@mcp.tool
-def get_media_dir_path() -> str:
+def get_media_dir_path(context: Context) -> str:
     """Get the path to the media directory."""
-    return wrapper.get_anki_wrapper().get_media_dir_path()
+    return _get_wrapper(context).get_media_dir_path()
 
 
-@mcp.tool
-def change_deck(cards: list[int], deck: str) -> bool:
+def change_deck(cards: list[int], deck: str, context: Context) -> bool:
     """Move cards to a different deck."""
-    wrapper.get_anki_wrapper().change_deck(cards, deck)
+    _get_wrapper(context).change_deck(cards, deck)
     return True
 
 
-@mcp.tool
-def cards_to_notes(cards: list[int]) -> list[int]:
+def cards_to_notes(cards: list[int], context: Context) -> list[int]:
     """Convert card IDs to note IDs."""
-    return wrapper.get_anki_wrapper().cards_to_notes(cards)
+    return _get_wrapper(context).cards_to_notes(cards)
 
 
-@mcp.tool
-def get_deck_config(deck: str) -> JsonObject:
+def get_deck_config(deck: str, context: Context) -> JsonObject:
     """Get deck configuration."""
-    return wrapper.get_anki_wrapper().get_deck_config(deck)
+    return _get_wrapper(context).get_deck_config(deck)
 
 
-@mcp.tool
-def get_model_templates(model_name: str) -> dict[str, dict[str, str]]:
+def get_model_templates(model_name: str, context: Context) -> dict[str, dict[str, str]]:
     """Get card templates for a model."""
-    return wrapper.get_anki_wrapper().model_templates(model_name)
+    return _get_wrapper(context).model_templates(model_name)
 
 
-@mcp.tool
-def get_model_styling(model_name: str) -> JsonObject:
+def get_model_styling(model_name: str, context: Context) -> JsonObject:
     """Get CSS styling for a model."""
-    return wrapper.get_anki_wrapper().model_styling(model_name)
+    return _get_wrapper(context).model_styling(model_name)
 
 
-@mcp.tool
 def get_api_version() -> int:
     """Get the AnkiConnect API version."""
-    return 6
+    return ANKICONNECT_API_VERSION
 
 
-@mcp.tool
-def store_media_file(filename: str, data: str) -> bool:
+def store_media_file(filename: str, data: str, context: Context) -> bool:
     """Store a base64-encoded media file."""
-    wrapper.get_anki_wrapper().store_media_file(filename, data)
+    _get_wrapper(context).store_media_file(filename, data)
     return True
 
 
-@mcp.tool
-def retrieve_media_file(filename: str) -> str | None:
+def retrieve_media_file(filename: str, context: Context) -> str | None:
     """Retrieve a media file as base64."""
-    return wrapper.get_anki_wrapper().retrieve_media_file(filename)
+    return _get_wrapper(context).retrieve_media_file(filename)
 
 
-@mcp.tool
-def delete_media_file(filename: str) -> bool:
+def delete_media_file(filename: str, context: Context) -> bool:
     """Delete a media file."""
-    wrapper.get_anki_wrapper().delete_media_file(filename)
+    _get_wrapper(context).delete_media_file(filename)
     return True
 
 
-@mcp.tool
-def import_package(path: str) -> JsonObject:
+def import_package(path: str, context: Context) -> JsonObject:
     """Import an Anki package."""
-    return wrapper.get_anki_wrapper().import_package(path)
+    return _get_wrapper(context).import_package(path)
 
 
-@mcp.tool
-def export_package(deck: str, path: str, include_sched: bool = False) -> bool:
+def export_package(
+    context: Context,
+    deck: str,
+    path: str,
+    include_sched: bool = False,
+) -> bool:
     """Export a deck to an Anki package."""
-    wrapper.get_anki_wrapper().export_package(deck, path, include_sched)
+    _get_wrapper(context).export_package(deck, path, include_sched)
     return True
 
 
-@mcp.tool
-def sync() -> str:
+def sync(context: Context) -> str:
     """Sync the collection with AnkiWeb."""
-    return wrapper.get_anki_wrapper().sync_to_ankiweb()
+    return _get_wrapper(context).sync_to_ankiweb()
 
 
-@mcp.tool
-def sync_media() -> str:
+def sync_media(context: Context) -> str:
     """Sync only media files with AnkiWeb."""
-    return wrapper.get_anki_wrapper().sync_media_only()
+    return _get_wrapper(context).sync_media_only()
 
 
-@mcp.tool
-def get_sync_status() -> JsonObject:
+def get_sync_status(context: Context) -> JsonObject:
     """Get sync status from AnkiWeb."""
-    return wrapper.get_anki_wrapper().sync_status()
+    return _get_wrapper(context).sync_status()
 
 
-mcp_app = mcp.http_app()
+def _register_tools(server: AnkiMcpServer) -> None:
+    server.tool(get_deck_names)
+    server.tool(get_deck_names_and_ids)
+    server.tool(create_deck)
+    server.tool(delete_decks)
+    server.tool(get_model_names)
+    server.tool(get_model_field_names)
+    server.tool(add_note)
+    server.tool(find_notes)
+    server.tool(get_notes_info)
+    server.tool(delete_notes)
+    server.tool(find_cards)
+    server.tool(get_cards_info)
+    server.tool(suspend_cards)
+    server.tool(unsuspend_cards)
+    server.tool(are_suspended)
+    server.tool(are_due)
+    server.tool(get_card_intervals)
+    server.tool(get_all_tags)
+    server.tool(add_tags)
+    server.tool(remove_tags)
+    server.tool(get_media_dir_path)
+    server.tool(change_deck)
+    server.tool(cards_to_notes)
+    server.tool(get_deck_config)
+    server.tool(get_model_templates)
+    server.tool(get_model_styling)
+    server.tool(get_api_version)
+    server.tool(store_media_file)
+    server.tool(retrieve_media_file)
+    server.tool(delete_media_file)
+    server.tool(import_package)
+    server.tool(export_package)
+    server.tool(sync)
+    server.tool(sync_media)
+    server.tool(get_sync_status)
+
+
+def create_mcp_server(wrapper_factory: WrapperFactory = create_anki_wrapper) -> AnkiMcpServer:
+    @asynccontextmanager
+    async def lifespan(_server: AnkiMcpServer) -> AsyncGenerator[dict[str, AnkiWrapper]]:
+        anki_wrapper = wrapper_factory()
+        try:
+            yield {_WRAPPER_CONTEXT_KEY: anki_wrapper}
+        finally:
+            anki_wrapper.close()
+
+    server = FastMCP(name="Anki Connect MCP Server", lifespan=lifespan)
+    _register_tools(server)
+    return server
+
+
+mcp = create_mcp_server()
 
 
 def run() -> None:
-    init_wrapper()
-    try:
-        mcp.run()
-    finally:
-        wrapper.close_wrapper()
-
-
-if __name__ == "__main__":
-    run()
+    mcp.run()

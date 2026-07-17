@@ -10,7 +10,6 @@ dependencies = [
     "fastmcp>=3.4.4",
     "pydantic>=2.13.4",
     "pydantic-settings>=2.14.2",
-    "python-multipart>=0.0.32",
     "uvicorn[standard]>=0.51.0",
 ]
 
@@ -21,11 +20,8 @@ anki-connect-server = "anki_connect_server.cli:main"
 package = true
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
 python_files = "test_*.py"
-python_classes = "Test*"
-python_functions = "test_*"
 addopts = "--cov=anki_connect_server --cov-report=term-missing --timeout=15"
 
 [tool.pyright]

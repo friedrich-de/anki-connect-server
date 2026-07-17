@@ -1,3 +1,6 @@
-from anki_connect_server.api import app as app
+from importlib.metadata import version
 
-__all__ = ["app"]
+ANKICONNECT_API_VERSION = 6
+__version__ = version("anki-connect-server")
+
+__all__ = ["ANKICONNECT_API_VERSION", "__version__"]

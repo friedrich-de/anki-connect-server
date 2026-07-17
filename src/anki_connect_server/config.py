@@ -1,15 +1,12 @@
 from functools import cache
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 def _missing_collection_path() -> Path:
-    raise ValueError(
-        "ANKICONNECT_COLLECTION_PATH is required "
-        "(ANKI_COLLECTION_PATH is accepted for compatibility)"
-    )
+    raise ValueError("ANKICONNECT_COLLECTION_PATH is required")
 
 
 class Config(BaseSettings):
@@ -18,19 +15,12 @@ class Config(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         env_prefix="ANKICONNECT_",
-        populate_by_name=True,
     )
 
     port: int = 8765
     bind: str = "127.0.0.1"
 
-    collection_path: Path = Field(
-        default_factory=_missing_collection_path,
-        validation_alias=AliasChoices(
-            "ANKICONNECT_COLLECTION_PATH",
-            "ANKI_COLLECTION_PATH",
-        ),
-    )
+    collection_path: Path = Field(default_factory=_missing_collection_path)
 
     ankiweb_user: str | None = None
     ankiweb_pass: str | None = None

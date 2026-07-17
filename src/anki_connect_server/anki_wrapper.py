@@ -1,6 +1,7 @@
 import base64
 import logging
 import re
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
 
@@ -20,7 +21,7 @@ from anki.sync import SyncAuth
 from anki.sync_pb2 import SyncCollectionResponse
 from google.protobuf.json_format import MessageToDict
 
-from anki_connect_server.config import Config
+from anki_connect_server.config import Config, get_config
 from anki_connect_server.types import (
     CardTemplateInput,
     JsonObject,
@@ -557,19 +558,11 @@ class AnkiWrapper:
         logger.info("Media sync completed")
         return "media sync completed"
 
-    def get_sync_auth(
-        self,
-        username: str | None = None,
-        password: str | None = None,
-        endpoint: str | None = None,
-    ) -> SyncAuth | None:
-        try:
-            user, pass_, url = self._credentials(
-                username,
-                password,
-                endpoint,
-                operation="sync authentication",
-            )
-        except ValueError:
-            return None
-        return self.col.sync_login(username=user, password=pass_, endpoint=url)
+
+type WrapperFactory = Callable[[], AnkiWrapper]
+
+
+def create_anki_wrapper(settings: Config | None = None) -> AnkiWrapper:
+    """Create a collection wrapper from explicit or environment-backed settings."""
+    resolved_settings = settings or get_config()
+    return AnkiWrapper(resolved_settings.collection_path, settings=resolved_settings)

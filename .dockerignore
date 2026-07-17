@@ -1,6 +1,7 @@
 .git
 .gitignore
-.env
+.env*
+!.env.example
 .venv
 __pycache__
 *.pyc
@@ -11,8 +12,12 @@ coverage.xml
 *.egg-info
 build
 dist
-new
 *.db
 *.db-wal
 *.db-shm
+*.anki2
+*.anki2-wal
+*.anki2-shm
+*.media
+*.media.db2
 .DS_Store

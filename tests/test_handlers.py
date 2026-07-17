@@ -1,13 +1,14 @@
 import pytest
 
+from anki_connect_server import ANKICONNECT_API_VERSION
 from anki_connect_server.anki_wrapper import AnkiWrapper
-from anki_connect_server.handlers import API_VERSION, dispatch
+from anki_connect_server.handlers import dispatch
 from anki_connect_server.types import JsonObject
 
 
 @pytest.mark.asyncio
 async def test_dispatches_version(anki_wrapper: AnkiWrapper) -> None:
-    assert await dispatch("version", {}, anki_wrapper) == API_VERSION
+    assert await dispatch("version", {}, anki_wrapper) == ANKICONNECT_API_VERSION
 
 
 @pytest.mark.asyncio

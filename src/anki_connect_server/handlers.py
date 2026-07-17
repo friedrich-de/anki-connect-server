@@ -3,6 +3,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import cast
 
+from anki_connect_server import ANKICONNECT_API_VERSION
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.types import (
     CardTemplateInput,
@@ -14,8 +15,6 @@ from anki_connect_server.types import (
 )
 
 logger = logging.getLogger(__name__)
-
-API_VERSION = 6
 
 
 class ValidationError(ValueError):
@@ -143,7 +142,7 @@ def _parse_styling_update(params: JsonObject) -> ModelStylingUpdate:
 
 
 async def handle_version(_wrapper: AnkiWrapper, _params: JsonObject) -> int:
-    return API_VERSION
+    return ANKICONNECT_API_VERSION
 
 
 async def handle_sync(wrapper: AnkiWrapper, params: JsonObject) -> str:

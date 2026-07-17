@@ -1,37 +1,20 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from typing import Annotated
 
-from fastapi import FastAPI
+from fastapi import APIRouter, Depends, FastAPI, Request
 from pydantic import BaseModel, Field
 
-from anki_connect_server import wrapper
-from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server import ANKICONNECT_API_VERSION, __version__
+from anki_connect_server.anki_wrapper import AnkiWrapper, WrapperFactory, create_anki_wrapper
 from anki_connect_server.config import get_config
 from anki_connect_server.handlers import dispatch
 from anki_connect_server.types import JsonObject, JsonValue
 
 
-@asynccontextmanager
-async def app_lifespan(_app: FastAPI) -> AsyncGenerator[None]:
-    settings = get_config()
-    wrapper.set_wrapper(AnkiWrapper(settings.collection_path, settings=settings))
-    try:
-        yield
-    finally:
-        wrapper.close_wrapper()
-
-
-app = FastAPI(
-    title="AnkiConnect Server",
-    description="Headless AnkiConnect-compatible REST API server with AnkiWeb sync",
-    version="0.2.0",
-    lifespan=app_lifespan,
-)
-
-
 class AnkiConnectRequest(BaseModel):
     action: str
-    version: int = 6
+    version: int = ANKICONNECT_API_VERSION
     params: JsonObject = Field(default_factory=dict)
 
 
@@ -40,15 +23,24 @@ class AnkiConnectResponse(BaseModel):
     error: str | None = None
 
 
-@app.get("/health")
+router = APIRouter()
+
+
+def get_request_wrapper(request: Request) -> AnkiWrapper | None:
+    value = getattr(request.app.state, "anki_wrapper", None)
+    return value if isinstance(value, AnkiWrapper) else None
+
+
+@router.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "healthy"}
 
 
-@app.post("/", response_model=AnkiConnectResponse)
-@app.post("/api", response_model=AnkiConnectResponse)
-async def handle_request(req: AnkiConnectRequest) -> AnkiConnectResponse:
-    anki_wrapper = wrapper.maybe_get_anki_wrapper()
+@router.post("/", response_model=AnkiConnectResponse)
+async def handle_request(
+    req: AnkiConnectRequest,
+    anki_wrapper: Annotated[AnkiWrapper | None, Depends(get_request_wrapper)],
+) -> AnkiConnectResponse:
     if anki_wrapper is None:
         return AnkiConnectResponse(error="Server not initialized")
 
@@ -59,13 +51,33 @@ async def handle_request(req: AnkiConnectRequest) -> AnkiConnectResponse:
         return AnkiConnectResponse(error=str(exc))
 
 
+def create_app(wrapper_factory: WrapperFactory = create_anki_wrapper) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(application: FastAPI) -> AsyncGenerator[None]:
+        anki_wrapper = wrapper_factory()
+        application.state.anki_wrapper = anki_wrapper
+        try:
+            yield
+        finally:
+            anki_wrapper.close()
+            application.state.anki_wrapper = None
+
+    application = FastAPI(
+        title="AnkiConnect Server",
+        description="Headless AnkiConnect-compatible REST API server with AnkiWeb sync",
+        version=__version__,
+        lifespan=lifespan,
+    )
+    application.include_router(router)
+    return application
+
+
+app = create_app()
+
+
 def run_server() -> None:
     """Run the FastAPI server."""
     import uvicorn
 
     settings = get_config()
     uvicorn.run(app, host=settings.bind, port=settings.port)
-
-
-if __name__ == "__main__":
-    run_server()
