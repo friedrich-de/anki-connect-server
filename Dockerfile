@@ -2,27 +2,24 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /usr/local/bin/
 
-# Copy pyproject.toml and install dependencies
-COPY pyproject.toml ./
-COPY uv.lock ./
-RUN uv sync --locked
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
 
-# Copy source code
-COPY . ./
+COPY pyproject.toml uv.lock README.md ./
+RUN uv sync --locked --no-dev --no-install-project
 
-# Create data directory for collection
+COPY src ./src
+RUN uv sync --locked --no-dev
+
 RUN mkdir -p /data
 
-# Environment variables
-ENV ANKICONNECT_COLLECTION_PATH=/data/collection.anki21
-ENV ANKICONNECT_PORT=8765
-ENV ANKICONNECT_BIND=0.0.0.0
+ENV ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
+    ANKICONNECT_PORT=8765 \
+    ANKICONNECT_BIND=0.0.0.0
 
-# Expose port
 EXPOSE 8765
 
-# Run the server directly
-CMD ["uv", "run", "server"]
+CMD ["anki-connect-server", "api"]

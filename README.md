@@ -3,7 +3,7 @@
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI](https://img.shields.io/pypi/v/anki-connect-server.svg)](https://pypi.org/project/anki-connect-server/)
 [![Docker](https://img.shields.io/docker/v/glechic/anki-connect-server)](https://hub.docker.com/r/glechic/anki-connect-server)
-[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)](https://fastapi.tiangolo.com/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.139+-green.svg)](https://fastapi.tiangolo.com/)
 
 Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MCP server integration.
 
@@ -37,19 +37,19 @@ Set environment variables before running the server:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANKI_COLLECTION_PATH` | **Yes** | - | Path to your `.anki21` collection file |
+| `ANKICONNECT_COLLECTION_PATH` | **Yes** | - | Path to your `.anki2` collection file (`ANKI_COLLECTION_PATH` is accepted as a compatibility alias) |
 | `ANKICONNECT_PORT` | No | `8765` | Server port |
 | `ANKICONNECT_BIND` | No | `127.0.0.1` | Bind address (use `0.0.0.0` for external access) |
 | `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (required for sync) |
 | `ANKICONNECT_ANKIWEB_PASS` | No | - | AnkiWeb password (required for sync) |
-| `ANKIWEB_URL` | No | - | Custom sync server URL (optional) |
+| `ANKICONNECT_ANKIWEB_URL` | No | - | Custom sync server URL (optional) |
 | `ANKICONNECT_FULL_UPLOAD` | No | `false` | Allow full upload on sync conflict |
 
 ### Example `.env` File
 
 ```bash
 # Required: Path to your Anki collection
-ANKI_COLLECTION_PATH=/path/to/collection.anki21
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki2
 
 # Optional: Server configuration
 ANKICONNECT_PORT=8765
@@ -60,7 +60,7 @@ ANKICONNECT_ANKIWEB_USER=your@email.com
 ANKICONNECT_ANKIWEB_PASS=your_password
 
 # Optional: Custom sync server
-ANKIWEB_URL=https://your-sync-server.com
+ANKICONNECT_ANKIWEB_URL=https://your-sync-server.com
 ```
 
 ## 🚀 Usage
@@ -69,13 +69,13 @@ ANKIWEB_URL=https://your-sync-server.com
 
 ```bash
 # Run the API server
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki2 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server api
 
 # Run the MCP server
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki2 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server mcp
@@ -83,7 +83,7 @@ uvx anki-connect-server mcp
 
 ## 📚 API Reference
 
-The server exposes a single POST endpoint at `/api` that accepts AnkiConnect-style JSON requests.
+The AnkiConnect-compatible endpoint is `POST /`. The existing `POST /api` route is retained as an alias, and both accept the same JSON requests.
 
 ### Request Format
 
@@ -121,7 +121,7 @@ On error:
 #### Get Deck Names
 
 ```bash
-curl -X POST http://localhost:8765/api \
+curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
   -d '{"action": "deckNames", "version": 6}'
 ```
@@ -129,7 +129,7 @@ curl -X POST http://localhost:8765/api \
 #### Create a Deck
 
 ```bash
-curl -X POST http://localhost:8765/api \
+curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
   -d '{"action": "createDeck", "version": 6, "params": {"deck": "My New Deck"}}'
 ```
@@ -137,7 +137,7 @@ curl -X POST http://localhost:8765/api \
 #### Add a Note
 
 ```bash
-curl -X POST http://localhost:8765/api \
+curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
   -d '{
     "action": "addNote",
@@ -159,7 +159,7 @@ curl -X POST http://localhost:8765/api \
 #### Sync with AnkiWeb
 
 ```bash
-curl -X POST http://localhost:8765/api \
+curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
   -d '{"action": "sync", "version": 6}'
 ```
@@ -167,7 +167,7 @@ curl -X POST http://localhost:8765/api \
 #### Batch Multiple Actions
 
 ```bash
-curl -X POST http://localhost:8765/api \
+curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
   -d '{
     "action": "multi",
@@ -251,7 +251,7 @@ The server includes a Model Context Protocol (MCP) integration for AI assistants
 ### Starting the MCP Server
 
 ```bash
-ANKI_COLLECTION_PATH=/path/to/collection.anki21 \
+ANKICONNECT_COLLECTION_PATH=/path/to/collection.anki2 \
 ANKICONNECT_ANKIWEB_USER=your@email.com \
 ANKICONNECT_ANKIWEB_PASS=your_password \
 uvx anki-connect-server mcp
@@ -297,7 +297,7 @@ Add to your `claude_desktop_config.json`:
       "command": "uvx",
       "args": ["anki-connect-server", "mcp"],
       "env": {
-        "ANKI_COLLECTION_PATH": "/path/to/collection.anki21",
+        "ANKICONNECT_COLLECTION_PATH": "/path/to/collection.anki2",
         "ANKICONNECT_ANKIWEB_USER": "your@email.com",
         "ANKICONNECT_ANKIWEB_PASS": "your_password"
       }
@@ -313,8 +313,8 @@ Add to your `claude_desktop_config.json`:
 ```bash
 docker run -d \
   -p 8765:8765 \
-  -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKI_COLLECTION_PATH=/data/collection.anki21 \
+  -v /path/to/collection.anki2:/data/collection.anki2 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
   -e ANKICONNECT_ANKIWEB_USER=your@email.com \
   -e ANKICONNECT_ANKIWEB_PASS=your_password \
   --name anki-connect-server \
@@ -332,9 +332,9 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      - ./collection.anki21:/data/collection.anki21
+      - ./collection.anki2:/data/collection.anki2
     environment:
-      - ANKI_COLLECTION_PATH=/data/collection.anki21
+      - ANKICONNECT_COLLECTION_PATH=/data/collection.anki2
       - ANKICONNECT_ANKIWEB_USER=${ANKIWEB_USER}
       - ANKICONNECT_ANKIWEB_PASS=${ANKIWEB_PASS}
     restart: unless-stopped
@@ -345,5 +345,3 @@ services:
 ```bash
 docker build -t anki-connect-server .
 ```
-
-

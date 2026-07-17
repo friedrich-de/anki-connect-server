@@ -1,247 +1,162 @@
-"""Behavioral tests for required=2 (FULL_SYNC) handling.
-
-This test verifies the fix for the silent sync failure bug where:
-- sync() returned "sync completed" but data didn't upload
-- required=2 (FULL_SYNC) was not handled, causing silent failures
-"""
+from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from unittest.mock import Mock, patch
-import tempfile
-import os
+from anki.sync import SyncAuth
+from anki.sync_pb2 import SyncCollectionResponse, SyncStatusResponse
+
+from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server.config import Config
 
 
-class TestRequired2Behavior:
-    """Test that required=2 (FULL_SYNC) downloads from AnkiWeb."""
+def _sync_wrapper(tmp_path: Path, *, full_upload: bool = False) -> AnkiWrapper:
+    settings = Config(
+        collection_path=tmp_path / "sync.anki2",
+        ankiweb_user="user@example.com",
+        ankiweb_pass="secret",
+        ankiweb_url="https://sync.example.com",
+        full_upload=full_upload,
+    )
+    return AnkiWrapper(settings.collection_path, settings=settings)
 
-    def test_required_2_downloads_from_ankiweb(self, caplog):
-        """Test that required=2 triggers download from AnkiWeb (not upload).
-        
-        This is the main bug fix - previously required=2 was not handled
-        and sync would report success without actually syncing.
-        """
-        import logging
-        from anki_connect_server.config import config
 
-        original_upload = config.FULL_UPLOAD
-        original_user = config.ANKIWEB_USER
-        original_pass = config.ANKIWEB_PASS
+@pytest.mark.parametrize(
+    ("required", "upload"),
+    [
+        (SyncCollectionResponse.FULL_SYNC, False),
+        (SyncCollectionResponse.FULL_DOWNLOAD, False),
+        (SyncCollectionResponse.FULL_UPLOAD, True),
+    ],
+)
+def test_full_sync_directions(
+    tmp_path: Path,
+    required: SyncCollectionResponse.ChangesRequired.ValueType,
+    upload: bool,
+) -> None:
+    wrapper = _sync_wrapper(tmp_path, full_upload=upload)
+    auth = SyncAuth(hkey="key")
+    response = SyncCollectionResponse(
+        host_number=7,
+        required=required,
+        server_media_usn=42,
+    )
+    try:
+        with (
+            patch.object(wrapper.col, "sync_login", return_value=auth),
+            patch.object(wrapper.col, "sync_collection", return_value=response),
+            patch.object(wrapper.col, "close_for_full_sync") as close_for_full_sync,
+            patch.object(wrapper.col, "full_upload_or_download") as full_sync,
+            patch.object(wrapper.col, "reopen") as reopen,
+        ):
+            result = wrapper.sync_to_ankiweb()
 
-        config.FULL_UPLOAD = False
-        config.ANKIWEB_USER = "test"
-        config.ANKIWEB_PASS = "test"
+        assert result == f"sync completed: host=7, required={required}"
+        close_for_full_sync.assert_called_once_with()
+        full_sync.assert_called_once_with(auth=auth, server_usn=42, upload=upload)
+        reopen.assert_called_once_with(after_full_sync=True)
+    finally:
+        wrapper.close()
 
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                collection_path = os.path.join(tmpdir, "test.anki21")
 
-                # Create mock collection
-                mock_col = Mock()
-                mock_auth = Mock(hkey="test_key")
-                mock_result = Mock()
-                mock_result.required = 2
-                mock_result.host_number = 7
-                mock_result.server_media_usn = 12345
+def test_full_upload_is_skipped_unless_enabled(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    response = SyncCollectionResponse(host_number=7, required=SyncCollectionResponse.FULL_UPLOAD)
+    try:
+        with (
+            patch.object(wrapper.col, "sync_login", return_value=SyncAuth(hkey="key")),
+            patch.object(wrapper.col, "sync_collection", return_value=response),
+            patch.object(wrapper.col, "full_upload_or_download") as full_sync,
+            caplog.at_level("WARNING"),
+        ):
+            wrapper.sync_to_ankiweb()
 
-                mock_col.sync_login = Mock(return_value=mock_auth)
-                mock_col.sync_collection = Mock(return_value=mock_result)
-                mock_col.close = Mock()
-                mock_col.close_for_full_sync = Mock()
-                mock_col.full_upload_or_download = Mock()
+        full_sync.assert_not_called()
+        assert "FULL_UPLOAD=false" in caplog.text
+    finally:
+        wrapper.close()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
-                    from anki_connect_server.anki_wrapper import AnkiWrapper
-                    wrapper = AnkiWrapper(collection_path)
 
-                    result = wrapper.sync_to_ankiweb()
+def test_normal_sync_reopens_collection(tmp_path: Path) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    response = SyncCollectionResponse(host_number=1, required=SyncCollectionResponse.NORMAL_SYNC)
+    original_collection = wrapper.col
+    try:
+        with (
+            patch.object(wrapper.col, "sync_login", return_value=SyncAuth(hkey="key")),
+            patch.object(wrapper.col, "sync_collection", return_value=response),
+        ):
+            wrapper.sync_to_ankiweb()
 
-                    # Verify sync completed
-                    assert "sync completed" in result
-                    assert "required=2" in result
+        assert wrapper.col is not original_collection
+        assert "Default" in wrapper.deck_names()
+    finally:
+        wrapper.close()
 
-                    # KEY ASSERTION: required=2 should DOWNLOAD (upload=False), not upload
-                    mock_col.full_upload_or_download.assert_called_once()
-                    call_args = mock_col.full_upload_or_download.call_args
-                    assert call_args[1]["upload"] is False, \
-                        "required=2 must DOWNLOAD from AnkiWeb (upload=False), not upload"
 
-        finally:
-            config.FULL_UPLOAD = original_upload
-            config.ANKIWEB_USER = original_user
-            config.ANKIWEB_PASS = original_pass
+def test_failed_full_sync_recovers_collection(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    response = SyncCollectionResponse(
+        host_number=7,
+        required=SyncCollectionResponse.FULL_DOWNLOAD,
+        server_media_usn=42,
+    )
+    try:
+        with (
+            patch.object(wrapper.col, "sync_login", return_value=SyncAuth(hkey="key")),
+            patch.object(wrapper.col, "sync_collection", return_value=response),
+            patch.object(wrapper.col, "close_for_full_sync"),
+            patch.object(
+                wrapper.col,
+                "full_upload_or_download",
+                side_effect=ValueError("sync failed"),
+            ),
+            patch.object(wrapper.col, "reopen") as reopen,
+            caplog.at_level("ERROR"),
+            pytest.raises(ValueError, match="sync failed"),
+        ):
+            wrapper.sync_to_ankiweb()
 
-    def test_required_3_downloads_from_ankiweb(self):
-        """Test that required=3 (FULL_DOWNLOAD) downloads from AnkiWeb."""
-        from anki_connect_server.config import config
+        assert "AnkiWeb sync failed" in caplog.text
+        reopen.assert_called_once_with(after_full_sync=True)
+        assert "Default" in wrapper.deck_names()
+    finally:
+        wrapper.close()
 
-        original_user = config.ANKIWEB_USER
-        original_pass = config.ANKIWEB_PASS
-        config.ANKIWEB_USER = "test"
-        config.ANKIWEB_PASS = "test"
 
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                collection_path = os.path.join(tmpdir, "test.anki21")
+def test_sync_status_and_media_forward_credentials(tmp_path: Path) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    auth = SyncAuth(hkey="key")
+    status = SyncStatusResponse(required=SyncStatusResponse.NORMAL_SYNC)
+    try:
+        with (
+            patch.object(wrapper.col, "sync_login", return_value=auth) as login,
+            patch.object(wrapper.col, "sync_status", return_value=status),
+            patch.object(wrapper.col, "sync_media") as sync_media,
+        ):
+            assert wrapper.sync_status() == {"required": 1, "newEndpoint": None}
+            assert wrapper.sync_media_only() == "media sync completed"
 
-                mock_col = Mock()
-                mock_auth = Mock(hkey="test_key")
-                mock_result = Mock()
-                mock_result.required = 3
-                mock_result.host_number = 7
-                mock_result.server_media_usn = 12345
+        login.assert_called_with(
+            username="user@example.com",
+            password="secret",
+            endpoint="https://sync.example.com",
+        )
+        sync_media.assert_called_once_with(auth)
+    finally:
+        wrapper.close()
 
-                mock_col.sync_login = Mock(return_value=mock_auth)
-                mock_col.sync_collection = Mock(return_value=mock_result)
-                mock_col.close = Mock()
-                mock_col.close_for_full_sync = Mock()
-                mock_col.full_upload_or_download = Mock()
 
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
-                    from anki_connect_server.anki_wrapper import AnkiWrapper
-                    wrapper = AnkiWrapper(collection_path)
-
-                    result = wrapper.sync_to_ankiweb()
-
-                    assert "sync completed" in result
-
-                    # Verify download (upload=False)
-                    mock_col.full_upload_or_download.assert_called_once()
-                    call_args = mock_col.full_upload_or_download.call_args
-                    assert call_args[1]["upload"] is False
-
-        finally:
-            config.ANKIWEB_USER = original_user
-            config.ANKIWEB_PASS = original_pass
-
-    def test_required_4_uploads_with_config(self):
-        """Test that required=4 (FULL_UPLOAD) uploads when FULL_UPLOAD=true."""
-        from anki_connect_server.config import config
-
-        original_upload = config.FULL_UPLOAD
-        original_user = config.ANKIWEB_USER
-        original_pass = config.ANKIWEB_PASS
-
-        config.FULL_UPLOAD = True
-        config.ANKIWEB_USER = "test"
-        config.ANKIWEB_PASS = "test"
-
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                collection_path = os.path.join(tmpdir, "test.anki21")
-
-                mock_col = Mock()
-                mock_auth = Mock(hkey="test_key")
-                mock_result = Mock()
-                mock_result.required = 4
-                mock_result.host_number = 7
-                mock_result.server_media_usn = 12345
-
-                mock_col.sync_login = Mock(return_value=mock_auth)
-                mock_col.sync_collection = Mock(return_value=mock_result)
-                mock_col.close = Mock()
-                mock_col.close_for_full_sync = Mock()
-                mock_col.full_upload_or_download = Mock()
-
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
-                    from anki_connect_server.anki_wrapper import AnkiWrapper
-                    wrapper = AnkiWrapper(collection_path)
-
-                    result = wrapper.sync_to_ankiweb()
-
-                    assert "sync completed" in result
-
-                    # Verify upload (upload=True)
-                    mock_col.full_upload_or_download.assert_called_once()
-                    call_args = mock_col.full_upload_or_download.call_args
-                    assert call_args[1]["upload"] is True
-
-        finally:
-            config.FULL_UPLOAD = original_upload
-            config.ANKIWEB_USER = original_user
-            config.ANKIWEB_PASS = original_pass
-
-    def test_required_4_skips_without_config(self, caplog):
-        """Test that required=4 is skipped when FULL_UPLOAD=false."""
-        import logging
-        from anki_connect_server.config import config
-
-        original_upload = config.FULL_UPLOAD
-        original_user = config.ANKIWEB_USER
-        original_pass = config.ANKIWEB_PASS
-
-        config.FULL_UPLOAD = False
-        config.ANKIWEB_USER = "test"
-        config.ANKIWEB_PASS = "test"
-
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                collection_path = os.path.join(tmpdir, "test.anki21")
-
-                mock_col = Mock()
-                mock_auth = Mock(hkey="test_key")
-                mock_result = Mock()
-                mock_result.required = 4
-                mock_result.host_number = 7
-
-                mock_col.sync_login = Mock(return_value=mock_auth)
-                mock_col.sync_collection = Mock(return_value=mock_result)
-                mock_col.close = Mock()
-
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
-                    from anki_connect_server.anki_wrapper import AnkiWrapper
-                    wrapper = AnkiWrapper(collection_path)
-
-                    with caplog.at_level(logging.WARNING):
-                        result = wrapper.sync_to_ankiweb()
-
-                    assert "sync completed" in result
-
-                    # Should NOT call full_upload_or_download
-                    mock_col.full_upload_or_download.assert_not_called()
-
-                    # Should log warning
-                    assert "FULL_UPLOAD=false" in caplog.text
-
-        finally:
-            config.FULL_UPLOAD = original_upload
-            config.ANKIWEB_USER = original_user
-            config.ANKIWEB_PASS = original_pass
-
-    def test_error_shows_exception_type(self, caplog):
-        """Test that errors include exception type, not just message."""
-        import logging
-        from anki_connect_server.config import config
-
-        original_user = config.ANKIWEB_USER
-        original_pass = config.ANKIWEB_PASS
-        config.ANKIWEB_USER = "test"
-        config.ANKIWEB_PASS = "test"
-
-        try:
-            with tempfile.TemporaryDirectory() as tmpdir:
-                collection_path = os.path.join(tmpdir, "test.anki21")
-
-                mock_col = Mock()
-                mock_auth = Mock(hkey="test_key")
-                mock_result = Mock()
-                mock_result.required = 0
-
-                mock_col.sync_login = Mock(return_value=mock_auth)
-                mock_col.sync_collection = Mock(return_value=mock_result)
-                mock_col.close = Mock(side_effect=ValueError("Test error"))
-
-                with patch('anki_connect_server.anki_wrapper.Collection', return_value=mock_col):
-                    from anki_connect_server.anki_wrapper import AnkiWrapper
-                    wrapper = AnkiWrapper(collection_path)
-
-                    with caplog.at_level(logging.ERROR):
-                        with pytest.raises(ValueError, match="Test error"):
-                            wrapper.sync_to_ankiweb()
-
-                    # Verify error log includes exception type
-                    assert "ValueError" in caplog.text
-                    assert "Test error" in caplog.text
-
-        finally:
-            config.ANKIWEB_USER = original_user
-            config.ANKIWEB_PASS = original_pass
+def test_missing_sync_credentials_are_reported(settings: Config) -> None:
+    wrapper = AnkiWrapper(settings.collection_path, settings=settings)
+    try:
+        with pytest.raises(ValueError, match="required for sync"):
+            wrapper.sync_to_ankiweb()
+        assert wrapper.get_sync_auth() is None
+    finally:
+        wrapper.close()

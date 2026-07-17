@@ -1,6 +1,15 @@
-from typing import Optional
-from pydantic import field_validator, model_validator
+from functools import cache
+from pathlib import Path
+
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _missing_collection_path() -> Path:
+    raise ValueError(
+        "ANKICONNECT_COLLECTION_PATH is required "
+        "(ANKI_COLLECTION_PATH is accepted for compatibility)"
+    )
 
 
 class Config(BaseSettings):
@@ -9,19 +18,33 @@ class Config(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
         env_prefix="ANKICONNECT_",
+        populate_by_name=True,
     )
 
-    PORT: int = 8765
-    BIND: str = "127.0.0.1"
+    port: int = 8765
+    bind: str = "127.0.0.1"
 
-    COLLECTION_PATH: str = ""
+    collection_path: Path = Field(
+        default_factory=_missing_collection_path,
+        validation_alias=AliasChoices(
+            "ANKICONNECT_COLLECTION_PATH",
+            "ANKI_COLLECTION_PATH",
+        ),
+    )
 
-    ANKIWEB_USER: Optional[str] = None
-    ANKIWEB_PASS: Optional[str] = None
+    ankiweb_user: str | None = None
+    ankiweb_pass: str | None = None
+    ankiweb_url: str | None = None
+    full_upload: bool = False
 
-    ANKIWEB_URL: Optional[str] = None
+    @field_validator("collection_path")
+    @classmethod
+    def validate_collection_path(cls, value: Path) -> Path:
+        if value.suffix.lower() != ".anki2":
+            raise ValueError("collection path must use the .anki2 extension")
+        return value
 
-    FULL_UPLOAD: bool = False
 
-
-config = Config().model_validate({})
+@cache
+def get_config() -> Config:
+    return Config()

@@ -1,22 +1,21 @@
-"""Tests configuration."""
-
-import os
-import tempfile
+from collections.abc import Iterator
+from pathlib import Path
 
 import pytest
 
+from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server.config import Config
+
 
 @pytest.fixture
-def anki_wrapper():
-    """Create a real AnkiWrapper with temporary collection."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        collection_path = os.path.join(tmpdir, "test.anki21")
-        media_path = collection_path + "-media"
-        os.makedirs(media_path, exist_ok=True)
+def settings(tmp_path: Path) -> Config:
+    return Config(collection_path=tmp_path / "test.anki2")
 
-        from anki_connect_server.anki_wrapper import AnkiWrapper
-        wrapper = AnkiWrapper(collection_path)
 
+@pytest.fixture
+def anki_wrapper(settings: Config) -> Iterator[AnkiWrapper]:
+    wrapper = AnkiWrapper(settings.collection_path, settings=settings)
+    try:
         yield wrapper
-
+    finally:
         wrapper.close()

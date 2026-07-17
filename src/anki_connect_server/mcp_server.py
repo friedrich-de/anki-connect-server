@@ -1,22 +1,21 @@
 from fastmcp import FastMCP
 
 from anki_connect_server import wrapper
-from anki_connect_server.config import Config
 from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server.config import Config, get_config
+from anki_connect_server.types import JsonObject, JsonValue, NoteInput
 
 
-def get_wrapper() -> AnkiWrapper:
-    config = Config()
-    return AnkiWrapper(config.COLLECTION_PATH)
+def get_wrapper(settings: Config | None = None) -> AnkiWrapper:
+    resolved_settings = settings or get_config()
+    return AnkiWrapper(resolved_settings.collection_path, settings=resolved_settings)
 
 
-def init_wrapper():
-    wrapper.set_wrapper(get_wrapper())
+def init_wrapper(settings: Config | None = None) -> None:
+    wrapper.set_wrapper(get_wrapper(settings))
 
 
-mcp = FastMCP(
-    name="Anki Connect MCP Server",
-)
+mcp = FastMCP(name="Anki Connect MCP Server")
 
 
 @mcp.tool
@@ -39,7 +38,7 @@ def create_deck(deck: str) -> int:
 
 @mcp.tool
 def delete_decks(decks: list[str], cards_too: bool = False) -> bool:
-    """Delete one or more decks. Set cardsToo to True to also delete cards."""
+    """Delete one or more decks and optionally their cards."""
     wrapper.get_anki_wrapper().delete_decks(decks, cards_too)
     return True
 
@@ -57,15 +56,19 @@ def get_model_field_names(model_name: str) -> list[str]:
 
 
 @mcp.tool
-def add_note(deck_name: str, model_name: str, fields: dict[str, str], tags: list[str] = []) -> int | None:
+def add_note(
+    deck_name: str,
+    model_name: str,
+    fields: dict[str, str],
+    tags: list[str] | None = None,
+) -> int | None:
     """Add a new note to the collection."""
-    note = {
-        "deckName": deck_name,
-        "modelName": model_name,
-        "fields": fields,
-    }
-    if tags:
-        note["tags"] = tags
+    note = NoteInput(
+        deckName=deck_name,
+        modelName=model_name,
+        fields=fields,
+        tags=list(tags or []),
+    )
     return wrapper.get_anki_wrapper().add_note(note)
 
 
@@ -76,7 +79,7 @@ def find_notes(query: str) -> list[int]:
 
 
 @mcp.tool
-def get_notes_info(notes: list[int]) -> list[dict]:
+def get_notes_info(notes: list[int]) -> list[JsonObject]:
     """Get detailed information about specific notes."""
     return wrapper.get_anki_wrapper().notes_info(notes)
 
@@ -95,7 +98,7 @@ def find_cards(query: str) -> list[int]:
 
 
 @mcp.tool
-def get_cards_info(cards: list[int]) -> list[dict]:
+def get_cards_info(cards: list[int]) -> list[JsonObject]:
     """Get detailed information about specific cards."""
     return wrapper.get_anki_wrapper().cards_info(cards)
 
@@ -114,18 +117,18 @@ def unsuspend_cards(cards: list[int]) -> bool:
 
 @mcp.tool
 def are_suspended(cards: list[int]) -> list[bool]:
-    """Check if cards are suspended."""
+    """Check whether cards are suspended."""
     return wrapper.get_anki_wrapper().are_suspended(cards)
 
 
 @mcp.tool
 def are_due(cards: list[int]) -> list[bool]:
-    """Check if cards are due for review."""
+    """Check whether cards are due for review."""
     return wrapper.get_anki_wrapper().are_due(cards)
 
 
 @mcp.tool
-def get_card_intervals(cards: list[int], complete: bool = False) -> list:
+def get_card_intervals(cards: list[int], complete: bool = False) -> list[JsonValue]:
     """Get intervals for cards."""
     return wrapper.get_anki_wrapper().get_intervals(cards, complete)
 
@@ -170,19 +173,19 @@ def cards_to_notes(cards: list[int]) -> list[int]:
 
 
 @mcp.tool
-def get_deck_config(deck: str) -> dict:
+def get_deck_config(deck: str) -> JsonObject:
     """Get deck configuration."""
     return wrapper.get_anki_wrapper().get_deck_config(deck)
 
 
 @mcp.tool
-def get_model_templates(model_name: str) -> dict:
+def get_model_templates(model_name: str) -> dict[str, dict[str, str]]:
     """Get card templates for a model."""
     return wrapper.get_anki_wrapper().model_templates(model_name)
 
 
 @mcp.tool
-def get_model_styling(model_name: str) -> dict:
+def get_model_styling(model_name: str) -> JsonObject:
     """Get CSS styling for a model."""
     return wrapper.get_anki_wrapper().model_styling(model_name)
 
@@ -195,14 +198,14 @@ def get_api_version() -> int:
 
 @mcp.tool
 def store_media_file(filename: str, data: str) -> bool:
-    """Store a media file."""
+    """Store a base64-encoded media file."""
     wrapper.get_anki_wrapper().store_media_file(filename, data)
     return True
 
 
 @mcp.tool
 def retrieve_media_file(filename: str) -> str | None:
-    """Retrieve a media file."""
+    """Retrieve a media file as base64."""
     return wrapper.get_anki_wrapper().retrieve_media_file(filename)
 
 
@@ -214,21 +217,21 @@ def delete_media_file(filename: str) -> bool:
 
 
 @mcp.tool
-def import_package(path: str) -> dict:
-    """Import an .apkg file."""
+def import_package(path: str) -> JsonObject:
+    """Import an Anki package."""
     return wrapper.get_anki_wrapper().import_package(path)
 
 
 @mcp.tool
 def export_package(deck: str, path: str, include_sched: bool = False) -> bool:
-    """Export a deck to an .apkg file."""
+    """Export a deck to an Anki package."""
     wrapper.get_anki_wrapper().export_package(deck, path, include_sched)
     return True
 
 
 @mcp.tool
 def sync() -> str:
-    """Sync collection with AnkiWeb."""
+    """Sync the collection with AnkiWeb."""
     return wrapper.get_anki_wrapper().sync_to_ankiweb()
 
 
@@ -239,7 +242,7 @@ def sync_media() -> str:
 
 
 @mcp.tool
-def get_sync_status() -> dict:
+def get_sync_status() -> JsonObject:
     """Get sync status from AnkiWeb."""
     return wrapper.get_anki_wrapper().sync_status()
 
@@ -247,9 +250,12 @@ def get_sync_status() -> dict:
 mcp_app = mcp.http_app()
 
 
-def run():
+def run() -> None:
     init_wrapper()
-    mcp.run()
+    try:
+        mcp.run()
+    finally:
+        wrapper.close_wrapper()
 
 
 if __name__ == "__main__":

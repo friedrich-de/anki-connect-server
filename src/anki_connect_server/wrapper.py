@@ -1,23 +1,25 @@
-from typing import Optional
-
 from anki_connect_server.anki_wrapper import AnkiWrapper
-from anki_connect_server.config import config
 
-
-wrapper: Optional[AnkiWrapper] = None
+_wrapper: AnkiWrapper | None = None
 
 
 def get_anki_wrapper() -> AnkiWrapper:
-    return wrapper
+    if _wrapper is None:
+        raise RuntimeError("Anki wrapper is not initialized")
+    return _wrapper
 
 
-def set_wrapper(w: AnkiWrapper):
-    global wrapper
-    wrapper = w
+def maybe_get_anki_wrapper() -> AnkiWrapper | None:
+    return _wrapper
 
 
-def close_wrapper():
-    global wrapper
-    if wrapper:
-        wrapper.close()
-        wrapper = None
+def set_wrapper(value: AnkiWrapper | None) -> None:
+    global _wrapper
+    _wrapper = value
+
+
+def close_wrapper() -> None:
+    global _wrapper
+    if _wrapper is not None:
+        _wrapper.close()
+        _wrapper = None

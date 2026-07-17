@@ -23,8 +23,8 @@ Headless AnkiConnect-compatible REST API server with AnkiWeb sync support and MC
 ```bash
 docker run -d \
   -p 8765:8765 \
-  -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKI_COLLECTION_PATH=/data/collection.anki21 \
+  -v /path/to/collection.anki2:/data/collection.anki2 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
   -e ANKICONNECT_ANKIWEB_USER=your@email.com \
   -e ANKICONNECT_ANKIWEB_PASS=your_password \
   --name anki-connect-server \
@@ -43,9 +43,9 @@ services:
     ports:
       - "8765:8765"
     volumes:
-      - ./collection.anki21:/data/collection.anki21
+      - ./collection.anki2:/data/collection.anki2
     environment:
-      - ANKI_COLLECTION_PATH=/data/collection.anki21
+      - ANKICONNECT_COLLECTION_PATH=/data/collection.anki2
       - ANKICONNECT_ANKIWEB_USER=${ANKIWEB_USER}
       - ANKICONNECT_ANKIWEB_PASS=${ANKIWEB_PASS}
     restart: unless-stopped
@@ -60,19 +60,19 @@ services:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANKI_COLLECTION_PATH` | **Yes** | - | Path to your `.anki21` collection file |
+| `ANKICONNECT_COLLECTION_PATH` | **Yes** | - | Path to your `.anki2` collection file (`ANKI_COLLECTION_PATH` remains a compatibility alias) |
 | `ANKICONNECT_PORT` | No | `8765` | Server port |
 | `ANKICONNECT_BIND` | No | `0.0.0.0` | Bind address |
 | `ANKICONNECT_ANKIWEB_USER` | No | - | AnkiWeb username (for sync) |
 | `ANKICONNECT_ANKIWEB_PASS` | No | - | AnkiWeb password (for sync) |
-| `ANKIWEB_URL` | No | - | Custom sync server URL |
+| `ANKICONNECT_ANKIWEB_URL` | No | - | Custom sync server URL |
 
 ## API Usage
 
 ### Get Deck Names
 
 ```bash
-curl -X POST http://localhost:8765/api \
+curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
   -d '{"action": "deckNames", "version": 6}'
 ```
@@ -80,7 +80,7 @@ curl -X POST http://localhost:8765/api \
 ### Add a Note
 
 ```bash
-curl -X POST http://localhost:8765/api \
+curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
   -d '{
     "action": "addNote",
@@ -98,7 +98,7 @@ curl -X POST http://localhost:8765/api \
 ### Sync with AnkiWeb
 
 ```bash
-curl -X POST http://localhost:8765/api \
+curl -X POST http://localhost:8765/ \
   -H "Content-Type: application/json" \
   -d '{"action": "sync", "version": 6}'
 ```
@@ -118,16 +118,16 @@ The image also includes MCP server support for AI assistants:
 
 ```bash
 docker run -d \
-  -v /path/to/collection.anki21:/data/collection.anki21 \
-  -e ANKI_COLLECTION_PATH=/data/collection.anki21 \
+  -v /path/to/collection.anki2:/data/collection.anki2 \
+  -e ANKICONNECT_COLLECTION_PATH=/data/collection.anki2 \
   your-docker-username/anki-connect-server \
-  uv run mcp-server
+  anki-connect-server mcp
 ```
 
 ## Volumes
 
 - `/data` - Directory for Anki collection and media files
-  - Mount your `collection.anki21` file here
+  - Mount your `collection.anki2` file here
   - Anki media directory will be created automatically
 
 ## Security Notes

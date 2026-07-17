@@ -18,3 +18,4 @@ build/
 coverage.xml
 anki_db
 anki_db-wal
+.devcontainer/devcontainer-lock.json

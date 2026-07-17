@@ -1,71 +1,80 @@
-"""Tests for config module."""
+from pathlib import Path
 
 import pytest
 
-
-def test_config_defaults():
-    """Test that config has correct defaults."""
-    from anki_connect_server.config import Config
-    cfg = Config(COLLECTION_PATH="/test/path.anki21")
-    assert cfg.PORT == 8765
-    assert cfg.BIND == "127.0.0.1"
+from anki_connect_server.config import Config, get_config
 
 
-def test_config_custom_values():
-    """Test custom configuration values."""
-    from anki_connect_server.config import Config
-    cfg = Config(
-        PORT=9000,
-        BIND="0.0.0.0",
-        COLLECTION_PATH="/test/path.anki21"
+def test_config_defaults(tmp_path: Path) -> None:
+    config = Config(collection_path=tmp_path / "collection.anki2")
+
+    assert config.port == 8765
+    assert config.bind == "127.0.0.1"
+    assert config.ankiweb_user is None
+    assert config.full_upload is False
+
+
+def test_config_custom_values(tmp_path: Path) -> None:
+    config = Config(
+        collection_path=tmp_path / "collection.anki2",
+        port=9000,
+        bind="192.0.2.1",
+        ankiweb_user="user@example.com",
+        ankiweb_pass="secret",
+        full_upload=True,
     )
-    assert cfg.PORT == 9000
-    assert cfg.BIND == "0.0.0.0"
+
+    assert config.port == 9000
+    assert config.bind == "192.0.2.1"
+    assert config.ankiweb_user == "user@example.com"
+    assert config.full_upload is True
 
 
-def test_config_ankiweb():
-    """Test AnkiWeb configuration."""
-    from anki_connect_server.config import Config
-    cfg = Config(
-        COLLECTION_PATH="/test/path.anki21",
-        ANKIWEB_USER="test@example.com",
-        ANKIWEB_PASS="password123"
-    )
-    assert cfg.ANKIWEB_USER == "test@example.com"
-    assert cfg.ANKIWEB_PASS == "password123"
+@pytest.mark.parametrize(
+    "environment_name",
+    ["ANKICONNECT_COLLECTION_PATH", "ANKI_COLLECTION_PATH"],
+)
+def test_collection_path_environment_aliases(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    environment_name: str,
+) -> None:
+    collection_path = tmp_path / "environment.anki2"
+    monkeypatch.delenv("ANKICONNECT_COLLECTION_PATH", raising=False)
+    monkeypatch.delenv("ANKI_COLLECTION_PATH", raising=False)
+    monkeypatch.setenv(environment_name, str(collection_path))
+
+    assert Config().collection_path == collection_path
 
 
-def test_config_optional_ankiweb(monkeypatch):
-    """Test that AnkiWeb config is optional when not set in env."""
-    from anki_connect_server.config import Config
-    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/test/path.anki21")
-    monkeypatch.delenv("ANKICONNECT_ANKIWEB_USER", raising=False)
-    monkeypatch.delenv("ANKICONNECT_ANKIWEB_PASS", raising=False)
-    
-    cfg = Config(_env_file=None)
-    assert cfg.ANKIWEB_USER is None
-    assert cfg.ANKIWEB_PASS is None
+def test_canonical_collection_path_takes_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    canonical = tmp_path / "canonical.anki2"
+    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", str(canonical))
+    monkeypatch.setenv("ANKI_COLLECTION_PATH", str(tmp_path / "legacy.anki2"))
+
+    assert Config().collection_path == canonical
 
 
-def test_validate_passes_with_collection_path():
-    """Test that validation passes with collection path."""
-    from anki_connect_server.config import Config
-    cfg = Config(COLLECTION_PATH="/test/path.anki21")
-    assert cfg.COLLECTION_PATH == "/test/path.anki21"
+def test_collection_path_is_required(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ANKICONNECT_COLLECTION_PATH", raising=False)
+    monkeypatch.delenv("ANKI_COLLECTION_PATH", raising=False)
+
+    with pytest.raises(ValueError, match="COLLECTION_PATH is required"):
+        Config()
 
 
-def test_config_loads_from_env(monkeypatch):
-    """Test that config loads from environment variables."""
-    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", "/env/path.anki21")
-    monkeypatch.setenv("ANKICONNECT_PORT", "9000")
-    monkeypatch.setenv("ANKICONNECT_ANKIWEB_USER", "env@user.com")
-    monkeypatch.setenv("ANKICONNECT_ANKIWEB_URL", "https://sync.example.com")
-    
-    import importlib
-    import anki_connect_server.config as config
-    importlib.reload(config)
-    
-    assert config.config.PORT == 9000
-    assert config.config.COLLECTION_PATH == "/env/path.anki21"
-    assert config.config.ANKIWEB_USER == "env@user.com"
-    assert config.config.ANKIWEB_URL == "https://sync.example.com"
+def test_collection_path_requires_anki2_extension(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match=r"\.anki2 extension"):
+        Config(collection_path=tmp_path / "collection.anki21")
+
+
+def test_get_config_is_cached(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ANKICONNECT_COLLECTION_PATH", str(tmp_path / "cached.anki2"))
+    get_config.cache_clear()
+    try:
+        assert get_config() is get_config()
+    finally:
+        get_config.cache_clear()
