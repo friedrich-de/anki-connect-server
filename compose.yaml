@@ -1,0 +1,30 @@
+services:
+  anki-connect-server:
+    build:
+      context: .
+    init: true
+    env_file:
+      - .env
+    environment:
+      ANKICONNECT_COLLECTION_PATH: /data/collection.anki2
+      # Container-wide listening is required for loopback-only host forwarding below.
+      HEALTH_LISTEN_ADDR: 0.0.0.0:8080
+      ALLOW_REMOTE_UI: "true"
+    command: ["anki-connect-server", "tunnel"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./anki-data:/data:Z
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=2).read()
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+    restart: unless-stopped

@@ -84,6 +84,11 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Validate Compose configuration
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+
       - name: Build image
         run: docker build --tag anki-connect-server:test .
 

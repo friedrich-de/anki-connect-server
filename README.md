@@ -178,7 +178,31 @@ and the tunnel opens no inbound internet listener; its control-plane traffic use
 
 ## Local Docker use
 
-Build the image from this checkout:
+For the shortest tunnel setup, clone the repository, copy the environment template, and fill in
+the two `CONTROL_PLANE_*` values:
+
+```bash
+git clone https://github.com/friedrich-de/anki-connect-server.git
+cd anki-connect-server
+cp .env.example .env
+# Edit .env and fill CONTROL_PLANE_TUNNEL_ID and CONTROL_PLANE_API_KEY.
+docker compose up --build --detach
+docker compose logs --follow
+```
+
+Compose builds the image locally, reads `.env` into the container, runs `anki-connect-server
+tunnel`, persists the collection under `./anki-data`, and exposes the tunnel-client UI only at
+`http://127.0.0.1:8080/ui`. Check readiness with `docker compose ps`. Stop the service without
+removing its data with:
+
+```bash
+docker compose down
+```
+
+The Compose file overrides `ANKICONNECT_COLLECTION_PATH` with `/data/collection.anki2`, so the
+host path in `.env` is used only when running directly from the source checkout.
+
+To run the REST API instead, build and start the image directly:
 
 ```bash
 docker build --tag anki-connect-server:local .
@@ -194,19 +218,6 @@ Mounting the full `/data` directory persists the collection and its media. The i
 The published port is bound to host loopback, so it is available only to local clients and reverse
 proxies running on the host. Keep `ANKICONNECT_BIND=0.0.0.0` inside the container so that container
 port forwarding can reach the server.
-
-An equivalent Compose service uses the local Dockerfile:
-
-```yaml
-services:
-  anki-connect-server:
-    build: .
-    ports:
-      - "127.0.0.1:8765:8765"
-    volumes:
-      - ./anki-data:/data
-    restart: unless-stopped
-```
 
 To expose the image's stdio MCP server to an MCP host, use an interactive one-shot container:
 
