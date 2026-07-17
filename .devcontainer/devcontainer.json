@@ -1,0 +1,56 @@
+{
+  "name": "anki-connect-server",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "context": ".."
+  },
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    }
+  },
+  "runArgs": [
+    "--volume",
+    "${localEnv:HOME}/.codex/auth.json:/home/vscode/.codex/auth.json:z"
+  ],
+  "remoteUser": "vscode",
+  "containerEnv": {
+    "UV_LINK_MODE": "copy"
+  },
+  "postCreateCommand": "uv sync --locked",
+  "waitFor": "postCreateCommand",
+  "forwardPorts": [
+    8765,
+    6274,
+    6277
+  ],
+  "portsAttributes": {
+    "8765": {
+      "label": "AnkiConnect API"
+    },
+    "6274": {
+      "label": "MCP Inspector"
+    },
+    "6277": {
+      "label": "MCP Inspector Proxy"
+    }
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "charliermarsh.ruff",
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "tamasfe.even-better-toml",
+        "openai.chatgpt"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "${containerWorkspaceFolder}/.venv/bin/python",
+        "python.testing.pytestEnabled": true,
+        "python.testing.pytestArgs": [
+          "tests"
+        ]
+      }
+    }
+  }
+}
