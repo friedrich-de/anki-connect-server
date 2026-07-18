@@ -8,6 +8,7 @@ from anki_connect_server.tool_metadata import (
     ADDITIVE_WRITE,
     DESTRUCTIVE_IDEMPOTENT_WRITE,
     DESTRUCTIVE_OPEN_WORLD_WRITE,
+    DESTRUCTIVE_WRITE,
     IDEMPOTENT_WRITE,
     READ_ONLY,
     SERVER_INSTRUCTIONS,
@@ -43,6 +44,7 @@ EXPECTED_ANNOTATIONS = {
     "sync": DESTRUCTIVE_OPEN_WORLD_WRITE,
     "submit_review": IDEMPOTENT_WRITE,
     "unsuspend_cards": DESTRUCTIVE_IDEMPOTENT_WRITE,
+    "update_note_fields": DESTRUCTIVE_WRITE,
 }
 
 
@@ -70,6 +72,15 @@ async def test_every_exposed_tool_has_explicit_annotations(
 
 
 def test_annotation_profiles_are_explicit() -> None:
+    assert (
+        ToolAnnotations(
+            readOnlyHint=False,
+            destructiveHint=True,
+            idempotentHint=False,
+            openWorldHint=False,
+        )
+        == DESTRUCTIVE_WRITE
+    )
     assert (
         ToolAnnotations(
             readOnlyHint=True,
@@ -141,6 +152,11 @@ async def test_server_instructions_are_exposed_during_initialization(
         "search_notes",
         "inspect_cards",
         "find_cards only for card-specific Anki queries",
+        "inspect its current fields and note ID",
+        "update_note_fields with only the fields the user requested",
+        "note edits affect all sibling cards",
+        "preserve supplied text and HTML verbatim",
+        "Store new binary media",
         "sync tool synchronizes collection data and media",
         "wait for its final result",
         "Full conflicts always download",

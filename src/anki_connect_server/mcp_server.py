@@ -2,12 +2,12 @@ import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastmcp import Context, FastMCP
 from fastmcp.tools import ToolResult
 from mcp.types import TextContent
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from anki_connect_server.anki_wrapper import AnkiWrapper, WrapperFactory, create_anki_wrapper
 from anki_connect_server.explore import (
@@ -34,6 +34,7 @@ from anki_connect_server.tool_metadata import (
     ADDITIVE_WRITE,
     DESTRUCTIVE_IDEMPOTENT_WRITE,
     DESTRUCTIVE_OPEN_WORLD_WRITE,
+    DESTRUCTIVE_WRITE,
     IDEMPOTENT_WRITE,
     READ_ONLY,
     SERVER_INSTRUCTIONS,
@@ -51,6 +52,15 @@ class McpState:
 type AnkiMcpServer = FastMCP[dict[str, McpState]]
 
 _STATE_CONTEXT_KEY = "anki_state"
+
+
+class UpdateNoteFieldsResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["updated"]
+    note_id: int
+    updated_fields: list[str]
+    affected_card_ids: list[int]
 
 
 def _get_state(context: Context) -> McpState:
@@ -134,6 +144,21 @@ def search_notes(
         limit=limit,
         offset=offset,
         content=content,
+    )
+
+
+def update_note_fields(
+    note_id: Annotated[int, Field(gt=0)],
+    fields: Annotated[dict[str, str], Field(min_length=1)],
+    context: Context,
+) -> UpdateNoteFieldsResult:
+    """Update selected fields on one note, preserving supplied text and HTML verbatim."""
+    affected_card_ids = _get_wrapper(context).update_note_fields(note_id, fields)
+    return UpdateNoteFieldsResult(
+        status="updated",
+        note_id=note_id,
+        updated_fields=list(fields),
+        affected_card_ids=affected_card_ids,
     )
 
 
@@ -284,6 +309,11 @@ def _register_tools(server: AnkiMcpServer) -> None:
     server.tool(get_model_field_names, annotations=READ_ONLY)
     server.tool(add_note, annotations=ADDITIVE_WRITE)
     server.tool(search_notes, annotations=READ_ONLY)
+    server.tool(
+        update_note_fields,
+        annotations=DESTRUCTIVE_WRITE,
+        output_schema=UpdateNoteFieldsResult.model_json_schema(),
+    )
     server.tool(delete_notes, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
     server.tool(find_cards, annotations=READ_ONLY)
     server.tool(

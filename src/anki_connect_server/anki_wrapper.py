@@ -469,11 +469,19 @@ class AnkiWrapper:
             and bool(fields[model_fields[0]])
         )
 
-    def update_note_fields(self, note_id: int, fields: dict[str, str]) -> None:
+    def update_note_fields(self, note_id: int, fields: dict[str, str]) -> list[int]:
+        if not fields:
+            raise ValueError("fields must contain at least one field")
         note = self.col.get_note(NoteId(note_id))
+        unknown_fields = [field_name for field_name in fields if field_name not in note]
+        if unknown_fields:
+            names = ", ".join(unknown_fields)
+            raise ValueError(f"Unknown fields for note {note_id}: {names}")
         for field_name, value in fields.items():
             note[field_name] = value
         self.col.update_note(note)
+        cards = sorted(note.cards(), key=lambda card: card.ord)
+        return [int(card.id) for card in cards]
 
     def add_tags(self, notes: list[int], tags: str) -> None:
         self.col.tags.bulk_add([NoteId(note_id) for note_id in notes], tags)

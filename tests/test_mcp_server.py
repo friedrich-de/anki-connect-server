@@ -47,6 +47,7 @@ EXPECTED_TOOLS = {
     "sync",
     "submit_review",
     "unsuspend_cards",
+    "update_note_fields",
 }
 
 REMOVED_MCP_TOOLS = {
@@ -70,7 +71,7 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
         tools = {tool.name: tool for tool in await client.list_tools()}
 
     assert tools.keys() == EXPECTED_TOOLS
-    assert len(tools) == 29
+    assert len(tools) == 30
     assert REMOVED_MCP_TOOLS.isdisjoint(tools)
     for tool in tools.values():
         tool_schema = cast(JsonObject, tool.inputSchema)
@@ -101,6 +102,25 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
         "maximum": 100,
         "minimum": 1,
         "type": "integer",
+    }
+
+    update_schema = cast(JsonObject, tools["update_note_fields"].inputSchema)
+    update_properties = update_schema["properties"]
+    assert isinstance(update_properties, dict)
+    assert set(update_properties) == {"note_id", "fields"}
+    assert update_properties["note_id"] == {"exclusiveMinimum": 0, "type": "integer"}
+    fields = update_properties["fields"]
+    assert isinstance(fields, dict)
+    assert fields["minProperties"] == 1
+
+    update_output = cast(JsonObject, tools["update_note_fields"].outputSchema)
+    output_properties = update_output["properties"]
+    assert isinstance(output_properties, dict)
+    assert set(output_properties) == {
+        "status",
+        "note_id",
+        "updated_fields",
+        "affected_card_ids",
     }
 
     inspect_schema = cast(JsonObject, tools["inspect_cards"].inputSchema)
@@ -197,6 +217,44 @@ async def test_representative_mcp_tools_use_lifespan_wrapper(
     assert scheduling["interval_days"] == 0
     assert isinstance(inspection.content[0], TextContent)
     assert json.loads(inspection.content[0].text) == inspection_data
+
+
+@pytest.mark.asyncio
+async def test_update_note_fields_returns_structured_result_without_syncing(
+    anki_wrapper: AnkiWrapper,
+) -> None:
+    note_id = anki_wrapper.add_note(
+        {
+            "deckName": "Default",
+            "modelName": "Basic (and reversed card)",
+            "fields": {"Front": "before", "Back": "unchanged"},
+        }
+    )
+    assert note_id is not None
+    expected_cards = anki_wrapper.find_cards(f"nid:{note_id}")
+
+    with patch.object(anki_wrapper, "sync_to_ankiweb") as sync:
+        async with Client(create_mcp_server(lambda: anki_wrapper)) as client:
+            result = await client.call_tool(
+                "update_note_fields",
+                {
+                    "note_id": note_id,
+                    "fields": {"Front": "<b>after</b>", "Back": ""},
+                },
+            )
+            fields = anki_wrapper.notes_info([note_id])[0]["fields"]
+
+    assert result.structured_content == {
+        "status": "updated",
+        "note_id": note_id,
+        "updated_fields": ["Front", "Back"],
+        "affected_card_ids": expected_cards,
+    }
+    assert fields == {
+        "Front": {"value": "<b>after</b>", "order": 0},
+        "Back": {"value": "", "order": 1},
+    }
+    sync.assert_not_called()
 
 
 @pytest.mark.asyncio

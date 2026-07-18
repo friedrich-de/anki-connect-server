@@ -17,9 +17,13 @@ SERVER_INSTRUCTIONS = (
     "get_model_names, and get_model_field_names. Before changing or deleting existing data, "
     "locate it with search_notes and use inspect_cards for targeted state, scheduling, history, "
     "or cleaned fields. Use find_cards only for card-specific Anki queries that note search "
-    "cannot express. Only perform state-changing operations when the user has requested them, "
-    "and report returned IDs and failures. Import, export, and AnkiWeb sync tools interact with "
-    "resources outside the collection; verify their paths, scope, and intended direction first."
+    "cannot express. To edit card content, inspect its current fields and note ID, then call "
+    "update_note_fields with only the fields the user requested; note edits affect all sibling "
+    "cards, preserve supplied text and HTML verbatim, and remain local until sync. Store new "
+    "binary media before referencing its filename in a field. Only perform state-changing "
+    "operations when the user has requested them, and report returned IDs and failures. Import, "
+    "export, and AnkiWeb sync tools interact with resources outside the collection; verify their "
+    "paths, scope, and intended direction first."
 )
 
 READ_ONLY = ToolAnnotations(
@@ -40,6 +44,13 @@ IDEMPOTENT_WRITE = ToolAnnotations(
     readOnlyHint=False,
     destructiveHint=False,
     idempotentHint=True,
+    openWorldHint=False,
+)
+
+DESTRUCTIVE_WRITE = ToolAnnotations(
+    readOnlyHint=False,
+    destructiveHint=True,
+    idempotentHint=False,
     openWorldHint=False,
 )
 

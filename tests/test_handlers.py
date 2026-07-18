@@ -75,6 +75,32 @@ async def test_dispatches_note_and_deck_actions(anki_wrapper: AnkiWrapper) -> No
     assert note_id in anki_wrapper.find_notes("hola")
 
 
+@pytest.mark.asyncio
+async def test_update_note_fields_preserves_http_response_shape(
+    anki_wrapper: AnkiWrapper,
+) -> None:
+    note_id = anki_wrapper.add_note(
+        {
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {"Front": "before", "Back": "unchanged"},
+        }
+    )
+    assert note_id is not None
+
+    result = await dispatch(
+        "updateNoteFields",
+        {"note": {"id": note_id, "fields": {"Front": "after"}}},
+        anki_wrapper,
+    )
+
+    assert result is None
+    assert anki_wrapper.notes_info([note_id])[0]["fields"] == {
+        "Front": {"value": "after", "order": 0},
+        "Back": {"value": "unchanged", "order": 1},
+    }
+
+
 @pytest.mark.parametrize(
     ("action", "params", "message"),
     [

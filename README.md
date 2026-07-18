@@ -121,8 +121,8 @@ The `mcp` command runs over stdio. Its tool names are:
 - Decks: `get_deck_names`, `create_deck`, `delete_decks`, `change_deck`, `get_deck_config`
 - Models: `get_model_names`, `get_model_field_names`, `get_model_templates`,
   `get_model_styling`
-- Notes and cards: `add_note`, `search_notes`, `delete_notes`, `find_cards`, `inspect_cards`,
-  `suspend_cards`, `unsuspend_cards`, `are_due`
+- Notes and cards: `add_note`, `search_notes`, `update_note_fields`, `delete_notes`, `find_cards`,
+  `inspect_cards`, `suspend_cards`, `unsuspend_cards`, `are_due`
 - Interactive review: `get_review_queue`, `get_next_review_card`, `submit_review`
 - Tags and media: `get_all_tags`, `add_tags`, `remove_tags`, `store_media_file`,
   `retrieve_media_file`, `delete_media_file`
@@ -160,6 +160,28 @@ The tool reports missing IDs explicitly and loads fields shared by sibling cards
 Use `find_cards` only when a card-scoped Anki query is required, such as finding suspended cards
 or selecting a particular card template. Rendered questions, answers, and binary image/audio MCP
 content remain exclusive to the interactive review workflow.
+
+### Editing note fields
+
+Anki cards render fields stored on their parent note. To edit card content, first use
+`search_notes(content="fields")`, or resolve a known card with
+`inspect_cards(properties=["identity", "fields"])`. Then call `update_note_fields` with the note
+ID and only the fields the user requested:
+
+```json
+{
+  "note_id": 1700000000000,
+  "fields": {
+    "Back": "Corrected answer with <b>verbatim Anki HTML</b>"
+  }
+}
+```
+
+Omitted fields remain unchanged, while an empty string clears a field. Values are stored exactly
+as supplied; editing a note changes the rendered content of all sibling cards and uses Anki's
+native behavior for generated cloze cards without intentionally changing review scheduling. To
+reference new local media, call `store_media_file` first and use its filename in the field. Edits
+remain local until `sync` is called.
 
 The optimized tools replace several former low-level MCP tools:
 
