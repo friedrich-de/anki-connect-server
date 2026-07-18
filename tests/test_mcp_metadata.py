@@ -41,6 +41,8 @@ EXPECTED_ANNOTATIONS = {
     "get_model_styling": READ_ONLY,
     "get_model_templates": READ_ONLY,
     "get_notes_info": READ_ONLY,
+    "get_next_review_card": READ_ONLY,
+    "get_review_queue": READ_ONLY,
     "get_sync_status": READ_ONLY_OPEN_WORLD,
     "import_package": DESTRUCTIVE_OPEN_WORLD_WRITE,
     "remove_tags": DESTRUCTIVE_IDEMPOTENT_WRITE,
@@ -49,6 +51,7 @@ EXPECTED_ANNOTATIONS = {
     "suspend_cards": DESTRUCTIVE_IDEMPOTENT_WRITE,
     "sync": DESTRUCTIVE_OPEN_WORLD_WRITE,
     "sync_media": DESTRUCTIVE_OPEN_WORLD_WRITE,
+    "submit_review": IDEMPOTENT_WRITE,
     "unsuspend_cards": DESTRUCTIVE_IDEMPOTENT_WRITE,
 }
 
@@ -144,6 +147,13 @@ async def test_server_instructions_are_exposed_during_initialization(
     assert initialize_result is not None
     assert initialize_result.instructions == SERVER_INSTRUCTIONS
     for phrase in (
+        "get_next_review_card",
+        "ask exactly its one question",
+        "never reveal the returned answer",
+        "incorrect, missing, or materially wrong means again",
+        "correct or semantically equivalent means good",
+        "hard or easy only when the user explicitly",
+        "immediately call submit_review",
         "target deck",
         "note type",
         "required fields",
@@ -152,3 +162,7 @@ async def test_server_instructions_are_exposed_during_initialization(
         "state-changing operations",
     ):
         assert phrase in SERVER_INSTRUCTIONS
+
+    first_512 = SERVER_INSTRUCTIONS[:512]
+    for phrase in ("get_next_review_card", "ask exactly", "submit_review", "fetching the next"):
+        assert phrase in first_512

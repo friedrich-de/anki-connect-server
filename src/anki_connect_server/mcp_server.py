@@ -1,10 +1,19 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 
 from fastmcp import Context, FastMCP
+from fastmcp.tools import ToolResult
 
 from anki_connect_server import ANKICONNECT_API_VERSION
 from anki_connect_server.anki_wrapper import AnkiWrapper, WrapperFactory, create_anki_wrapper
+from anki_connect_server.review import (
+    QueueCounts,
+    ReviewCardPayload,
+    ReviewManager,
+    ReviewRating,
+    SubmitReviewResult,
+)
 from anki_connect_server.tool_metadata import (
     ADDITIVE_WRITE,
     DESTRUCTIVE_IDEMPOTENT_WRITE,
@@ -16,16 +25,27 @@ from anki_connect_server.tool_metadata import (
 )
 from anki_connect_server.types import JsonObject, JsonValue, NoteInput
 
-type AnkiMcpServer = FastMCP[dict[str, AnkiWrapper]]
 
-_WRAPPER_CONTEXT_KEY = "anki_wrapper"
+@dataclass
+class McpState:
+    wrapper: AnkiWrapper
+    reviews: ReviewManager
+
+
+type AnkiMcpServer = FastMCP[dict[str, McpState]]
+
+_STATE_CONTEXT_KEY = "anki_state"
+
+
+def _get_state(context: Context) -> McpState:
+    value = context.lifespan_context.get(_STATE_CONTEXT_KEY)
+    if not isinstance(value, McpState):
+        raise RuntimeError("Anki MCP state is not initialized")
+    return value
 
 
 def _get_wrapper(context: Context) -> AnkiWrapper:
-    value = context.lifespan_context.get(_WRAPPER_CONTEXT_KEY)
-    if not isinstance(value, AnkiWrapper):
-        raise RuntimeError("Anki wrapper is not initialized")
-    return value
+    return _get_state(context).wrapper
 
 
 def get_deck_names(context: Context) -> list[str]:
@@ -184,6 +204,25 @@ def get_api_version() -> int:
     return ANKICONNECT_API_VERSION
 
 
+def get_review_queue(deck: str, context: Context) -> QueueCounts:
+    """Get Anki's current new, learning, and review counts for an existing deck."""
+    return _get_state(context).reviews.get_queue(deck)
+
+
+def get_next_review_card(deck: str, context: Context) -> ToolResult:
+    """Get one queued card for an interactive review without changing its schedule."""
+    return _get_state(context).reviews.get_next_card(context.session_id, deck)
+
+
+def submit_review(
+    review_id: str,
+    rating: ReviewRating,
+    context: Context,
+) -> SubmitReviewResult:
+    """Immediately apply one queued review rating to the local Anki collection."""
+    return _get_state(context).reviews.submit(context.session_id, review_id, rating)
+
+
 def store_media_file(filename: str, data: str, context: Context) -> bool:
     """Store a base64-encoded media file."""
     _get_wrapper(context).store_media_file(filename, data)
@@ -260,6 +299,13 @@ def _register_tools(server: AnkiMcpServer) -> None:
     server.tool(get_model_templates, annotations=READ_ONLY)
     server.tool(get_model_styling, annotations=READ_ONLY)
     server.tool(get_api_version, annotations=READ_ONLY)
+    server.tool(get_review_queue, annotations=READ_ONLY)
+    server.tool(
+        get_next_review_card,
+        annotations=READ_ONLY,
+        output_schema=ReviewCardPayload.model_json_schema(),
+    )
+    server.tool(submit_review, annotations=IDEMPOTENT_WRITE)
     server.tool(store_media_file, annotations=IDEMPOTENT_WRITE)
     server.tool(retrieve_media_file, annotations=READ_ONLY)
     server.tool(delete_media_file, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
@@ -272,10 +318,11 @@ def _register_tools(server: AnkiMcpServer) -> None:
 
 def create_mcp_server(wrapper_factory: WrapperFactory = create_anki_wrapper) -> AnkiMcpServer:
     @asynccontextmanager
-    async def lifespan(_server: AnkiMcpServer) -> AsyncGenerator[dict[str, AnkiWrapper]]:
+    async def lifespan(_server: AnkiMcpServer) -> AsyncGenerator[dict[str, McpState]]:
         anki_wrapper = wrapper_factory()
+        state = McpState(wrapper=anki_wrapper, reviews=ReviewManager(anki_wrapper))
         try:
-            yield {_WRAPPER_CONTEXT_KEY: anki_wrapper}
+            yield {_STATE_CONTEXT_KEY: state}
         finally:
             anki_wrapper.close()
 

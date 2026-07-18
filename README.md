@@ -9,7 +9,7 @@ collection directly, so the desktop application does not need to be running.
 ## Features
 
 - AnkiConnect-compatible JSON API at `POST /`
-- MCP tools for decks, models, notes, cards, media, packages, and synchronization
+- MCP tools for decks, models, notes, cards, interactive review, media, packages, and sync
 - Outbound-only OpenAI Secure MCP Tunnel support for the stdio MCP server
 - Direct headless access to an Anki collection without Qt
 - On-demand collection and media synchronization with AnkiWeb
@@ -101,8 +101,8 @@ Supported actions are:
   `createModel`, `modelTemplates`, `modelStyling`, `updateModelTemplates`, `updateModelStyling`
 - Notes: `addNote`, `addNotes`, `canAddNotes`, `updateNoteFields`, `addTags`, `removeTags`,
   `getTags`, `findNotes`, `notesInfo`, `deleteNotes`
-- Cards: `findCards`, `cardsToNotes`, `cardsInfo`, `suspend`, `unsuspend`, `areSuspended`,
-  `areDue`, `getIntervals`
+- Cards: `findCards`, `cardsToNotes`, `cardsInfo`, `answerCards`, `suspend`, `unsuspend`,
+  `areSuspended`, `areDue`, `getIntervals`
 - Media: `getMediaDirPath`, `storeMediaFile`, `retrieveMediaFile`, `deleteMediaFile`
 
 The health endpoint is available at `GET /health`.
@@ -118,6 +118,7 @@ The `mcp` command runs over stdio. Its tool names are:
 - Notes and cards: `add_note`, `find_notes`, `get_notes_info`, `delete_notes`, `find_cards`,
   `get_cards_info`, `suspend_cards`, `unsuspend_cards`, `are_suspended`, `are_due`,
   `get_card_intervals`, `cards_to_notes`
+- Interactive review: `get_review_queue`, `get_next_review_card`, `submit_review`
 - Tags and media: `get_all_tags`, `add_tags`, `remove_tags`, `get_media_dir_path`,
   `store_media_file`, `retrieve_media_file`, `delete_media_file`
 - Packages and sync: `import_package`, `export_package`, `sync`, `sync_media`,
@@ -144,6 +145,39 @@ For a local MCP host, point the configuration at this source checkout:
   }
 }
 ```
+
+### Interactive deck review
+
+Ask the connected model, for example, “Review my Spanish deck with me now.” The model uses Anki's
+current scheduler queue, asks one card at a time, waits for your response, compares it with the
+rendered answer, and immediately records the rating before advancing. Incorrect, missing, or
+materially wrong answers are rated `again`; correct or semantically equivalent answers are rated
+`good`. The model uses `hard` or `easy` only when you explicitly supply that rating.
+
+`get_next_review_card` returns the question and answer together to reduce round trips, but the MCP
+instructions prohibit revealing the answer before you respond. Local card images and audio are
+included as standard MCP content when supported; unavailable media remains visible in a manifest.
+Review IDs are session-bound, expire after one hour, and make identical submission retries safe.
+
+Ratings are written to the local collection after every answer. They are not sent to AnkiWeb until
+you explicitly call the existing `sync` tool or `sync` API action.
+
+For AnkiConnect clients, the equivalent compatibility action accepts the standard ease values:
+
+```json
+{
+  "action": "answerCards",
+  "version": 6,
+  "params": {
+    "answers": [
+      {"cardId": 1234567890, "ease": 3}
+    ]
+  }
+}
+```
+
+Ease values `1`, `2`, `3`, and `4` mean Again, Hard, Good, and Easy. The result contains one
+boolean per input answer in the same order; a missing card produces `false`.
 
 ## OpenAI Secure MCP Tunnel
 

@@ -4,12 +4,13 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
+from anki.cards import CardId
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.api import create_app
-from anki_connect_server.types import JsonObject
+from anki_connect_server.types import JsonObject, NoteInput
 
 
 @asynccontextmanager
@@ -70,6 +71,54 @@ async def test_api_runs_representative_action(anki_wrapper: AnkiWrapper) -> None
     assert response.status_code == 200
     assert isinstance(data["result"], int)
     assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_answer_cards_validates_before_mutation_and_preserves_order(
+    anki_wrapper: AnkiWrapper,
+) -> None:
+    note_id = anki_wrapper.add_note(
+        NoteInput(
+            deckName="Default",
+            modelName="Basic",
+            fields={"Front": "Untouched", "Back": "Answer"},
+        )
+    )
+    assert note_id is not None
+    card_id = anki_wrapper.find_cards(f"nid:{note_id}")[0]
+
+    async with _app_client(anki_wrapper) as client:
+        invalid_response = await client.post(
+            "/",
+            json={
+                "action": "answerCards",
+                "params": {
+                    "answers": [
+                        {"cardId": card_id, "ease": 3},
+                        {"cardId": card_id, "ease": 5},
+                    ]
+                },
+            },
+        )
+        queue = anki_wrapper.col.get_card(CardId(card_id)).queue
+        valid_response = await client.post(
+            "/",
+            json={
+                "action": "answerCards",
+                "params": {
+                    "answers": [
+                        {"cardId": card_id, "ease": 3},
+                        {"cardId": 1, "ease": 1},
+                    ]
+                },
+            },
+        )
+
+    data = cast(JsonObject, invalid_response.json())
+    assert data["result"] is None
+    assert data["error"] == "ease must be one of 1, 2, 3, or 4"
+    assert queue == 0
+    assert valid_response.json() == {"result": [True, False], "error": None}
 
 
 @pytest.mark.asyncio

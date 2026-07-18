@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 import pytest
 from fastmcp import Client
+from mcp.types import AudioContent, ImageContent, TextContent
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.mcp_server import create_mcp_server
@@ -35,6 +36,8 @@ EXPECTED_TOOLS = {
     "get_model_styling",
     "get_model_templates",
     "get_notes_info",
+    "get_next_review_card",
+    "get_review_queue",
     "get_sync_status",
     "import_package",
     "remove_tags",
@@ -43,6 +46,7 @@ EXPECTED_TOOLS = {
     "suspend_cards",
     "sync",
     "sync_media",
+    "submit_review",
     "unsuspend_cards",
 }
 
@@ -63,6 +67,13 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
     properties = schema["properties"]
     assert isinstance(properties, dict)
     assert set(properties) == {"deck"}
+
+    review_schema = cast(JsonObject, tools["submit_review"].inputSchema)
+    review_properties = review_schema["properties"]
+    assert isinstance(review_properties, dict)
+    rating = review_properties["rating"]
+    assert isinstance(rating, dict)
+    assert rating["enum"] == ["again", "hard", "good", "easy"]
 
 
 @pytest.mark.asyncio
@@ -104,6 +115,51 @@ async def test_representative_mcp_tools_use_lifespan_wrapper(
     assert note_ids == [note_id]
     assert note_info[0]["noteId"] == note_id
     assert api_version == 6
+
+
+@pytest.mark.asyncio
+async def test_interactive_review_tools_share_session_and_retry_safely(
+    anki_wrapper: AnkiWrapper,
+) -> None:
+    anki_wrapper.col.media.write_data("picture.png", b"\x89PNG")
+    anki_wrapper.col.media.write_data("voice.mp3", b"ID3")
+    note_id = anki_wrapper.add_note(
+        {
+            "deckName": "Default",
+            "modelName": "Basic",
+            "fields": {
+                "Front": 'MCP review <img src="picture.png"> [sound:voice.mp3]',
+                "Back": "answer",
+            },
+        }
+    )
+    assert note_id is not None
+
+    async with Client(create_mcp_server(lambda: anki_wrapper)) as client:
+        queue = await client.call_tool("get_review_queue", {"deck": "Default"})
+        first = await client.call_tool("get_next_review_card", {"deck": "Default"})
+        second = await client.call_tool("get_next_review_card", {"deck": "Default"})
+        first_data = cast(JsonObject, first.structured_content)
+        second_data = cast(JsonObject, second.structured_content)
+        review_id = first_data["review_id"]
+        assert isinstance(review_id, str)
+        applied = await client.call_tool(
+            "submit_review",
+            {"review_id": review_id, "rating": "good"},
+        )
+        retried = await client.call_tool(
+            "submit_review",
+            {"review_id": review_id, "rating": "good"},
+        )
+
+    assert cast(JsonObject, queue.structured_content)["total"] == 1
+    assert first_data["review_id"] == second_data["review_id"]
+    assert isinstance(first_data["question"], str)
+    assert "MCP review" in first_data["question"]
+    assert isinstance(first.content[0], TextContent)
+    assert any(isinstance(block, ImageContent) for block in first.content)
+    assert any(isinstance(block, AudioContent) for block in first.content)
+    assert applied.structured_content == retried.structured_content
 
 
 @pytest.mark.asyncio

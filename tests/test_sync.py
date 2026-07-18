@@ -91,6 +91,7 @@ def test_normal_sync_reopens_collection(tmp_path: Path) -> None:
             wrapper.sync_to_ankiweb()
 
         assert wrapper.col is not original_collection
+        assert wrapper.collection_generation == 1
         assert "Default" in wrapper.deck_names()
     finally:
         wrapper.close()
@@ -124,6 +125,7 @@ def test_failed_full_sync_recovers_collection(
 
         assert "AnkiWeb sync failed" in caplog.text
         reopen.assert_called_once_with(after_full_sync=True)
+        assert wrapper.collection_generation == 1
         assert "Default" in wrapper.deck_names()
     finally:
         wrapper.close()

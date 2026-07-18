@@ -26,3 +26,8 @@ class ModelTemplateUpdate(TypedDict):
 class ModelStylingUpdate(TypedDict):
     name: str
     css: str
+
+
+class CardAnswerInput(TypedDict):
+    cardId: int
+    ease: int

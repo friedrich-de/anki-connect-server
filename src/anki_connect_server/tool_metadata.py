@@ -3,6 +3,13 @@
 from mcp.types import ToolAnnotations
 
 SERVER_INSTRUCTIONS = (
+    "For an interactive deck review, call get_next_review_card, ask exactly its one question, "
+    "and never reveal the returned answer before the user responds. Wait for the response, "
+    "compare it semantically with the answer, then immediately call submit_review: incorrect, "
+    "missing, or materially wrong means again; correct or semantically equivalent means good. "
+    "Use hard or easy only when the user explicitly requests or supplies that rating. Report any "
+    "submission failure before fetching the next card, then repeat one card at a time. The user's "
+    "review request authorizes each inferred rating. Ratings remain local until sync is called. "
     "Use these tools to inspect and modify the user's Anki collection. Before adding a note, "
     "identify the target deck, note type, and required fields with get_deck_names, "
     "get_model_names, and get_model_field_names. Before changing or deleting existing data, "

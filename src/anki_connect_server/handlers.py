@@ -6,6 +6,7 @@ from typing import cast
 from anki_connect_server import ANKICONNECT_API_VERSION
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.types import (
+    CardAnswerInput,
     CardTemplateInput,
     JsonObject,
     JsonValue,
@@ -124,6 +125,24 @@ def _parse_card_templates(params: JsonObject) -> list[CardTemplateInput]:
             )
         )
     return result
+
+
+def _parse_card_answers(params: JsonObject) -> list[CardAnswerInput]:
+    require_params(params, "answers")
+    if set(params) != {"answers"}:
+        raise ValidationError("answerCards params must contain exactly answers")
+    answers: list[CardAnswerInput] = []
+    for value in _get_list(params, "answers", required=True):
+        if not isinstance(value, dict):
+            raise ValidationError("answers must contain only objects")
+        if set(value) != {"cardId", "ease"}:
+            raise ValidationError("each answer must contain exactly cardId and ease")
+        card_id = _get_int(value, "cardId")
+        ease = _get_int(value, "ease")
+        if ease not in (1, 2, 3, 4):
+            raise ValidationError("ease must be one of 1, 2, 3, or 4")
+        answers.append(CardAnswerInput(cardId=card_id, ease=ease))
+    return answers
 
 
 def _parse_template_update(params: JsonObject) -> ModelTemplateUpdate:
@@ -335,6 +354,10 @@ async def handle_cards_info(wrapper: AnkiWrapper, params: JsonObject) -> list[Js
     return wrapper.cards_info(_get_int_list(params, "cards", required=True))
 
 
+async def handle_answer_cards(wrapper: AnkiWrapper, params: JsonObject) -> list[bool]:
+    return wrapper.answer_cards(_parse_card_answers(params))
+
+
 async def handle_suspend(wrapper: AnkiWrapper, params: JsonObject) -> bool:
     return wrapper.suspend(_get_int_list(params, "cards", required=True))
 
@@ -441,6 +464,7 @@ ACTION_HANDLERS: dict[str, Handler] = {
     "findCards": handle_find_cards,
     "cardsToNotes": handle_cards_to_notes,
     "cardsInfo": handle_cards_info,
+    "answerCards": handle_answer_cards,
     "suspend": handle_suspend,
     "unsuspend": handle_unsuspend,
     "areSuspended": handle_are_suspended,

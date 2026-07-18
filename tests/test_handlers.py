@@ -39,6 +39,19 @@ async def test_dispatches_note_and_deck_actions(anki_wrapper: AnkiWrapper) -> No
         ("addNote", {"note": "invalid"}, "note must be an object"),
         ("addNotes", {"notes": "invalid"}, "notes must be a list"),
         ("suspend", {"cards": [True]}, "only integers"),
+        ("answerCards", {}, "Missing required parameters"),
+        ("answerCards", {"answers": [1]}, "only objects"),
+        ("answerCards", {"answers": [], "extra": True}, "exactly answers"),
+        (
+            "answerCards",
+            {"answers": [{"cardId": 1, "ease": 3, "extra": True}]},
+            "exactly cardId and ease",
+        ),
+        (
+            "answerCards",
+            {"answers": [{"cardId": 1, "ease": 0}]},
+            "ease must be one of",
+        ),
     ],
 )
 @pytest.mark.asyncio

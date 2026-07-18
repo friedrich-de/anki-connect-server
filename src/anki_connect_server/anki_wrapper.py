@@ -3,7 +3,7 @@ import logging
 import re
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 import anki.collection
 from anki.cards import CardId
@@ -23,6 +23,7 @@ from google.protobuf.json_format import MessageToDict
 
 from anki_connect_server.config import Config, get_config
 from anki_connect_server.types import (
+    CardAnswerInput,
     CardTemplateInput,
     JsonObject,
     JsonValue,
@@ -43,6 +44,12 @@ class AnkiWrapper:
         self.settings = settings or Config(collection_path=self.collection_path)
         self.col = Collection(str(self.collection_path))
         self._closed = False
+        self._collection_generation = 0
+
+    @property
+    def collection_generation(self) -> int:
+        """Incremented whenever synchronization reopens the collection."""
+        return self._collection_generation
 
     def close(self) -> None:
         if not self._closed:
@@ -52,6 +59,7 @@ class AnkiWrapper:
     def _reopen_collection(self) -> None:
         self.col = Collection(str(self.collection_path))
         self._closed = False
+        self._collection_generation += 1
 
     def _credentials(
         self,
@@ -78,6 +86,7 @@ class AnkiWrapper:
         finally:
             self.col.reopen(after_full_sync=True)
             self._closed = False
+            self._collection_generation += 1
 
     def sync_to_ankiweb(
         self,
@@ -424,6 +433,21 @@ class AnkiWrapper:
             )
         return result
 
+    def answer_cards(self, answers: list[CardAnswerInput]) -> list[bool]:
+        """Apply AnkiConnect-compatible ease ratings in input order."""
+        results: list[bool] = []
+        for answer in answers:
+            try:
+                card = self.col.get_card(CardId(answer["cardId"]))
+            except NotFoundError:
+                results.append(False)
+                continue
+            card.start_timer()
+            ease = cast(Literal[1, 2, 3, 4], answer["ease"])
+            self.col.sched.answerCard(card, ease)
+            results.append(True)
+        return results
+
     def suspend(self, cards: list[int]) -> bool:
         changes = self.col.sched.suspend_cards([CardId(card_id) for card_id in cards])
         return changes.count > 0
@@ -475,7 +499,8 @@ class AnkiWrapper:
     def get_media_dir_path(self) -> str:
         return self.col.media.dir()
 
-    def _media_path(self, filename: str) -> Path:
+    def media_path(self, filename: str) -> Path:
+        """Return a safe path inside the collection media directory."""
         if not filename or Path(filename).name != filename:
             raise ValueError("Media filename must not contain a directory")
         media_root = Path(self.col.media.dir()).resolve()
@@ -485,19 +510,19 @@ class AnkiWrapper:
         return candidate
 
     def store_media_file(self, filename: str, data: str) -> None:
-        self._media_path(filename)
+        self.media_path(filename)
         file_data = base64.b64decode(data, validate=True)
         self.col.media.write_data(filename, file_data)
 
     def retrieve_media_file(self, filename: str) -> str | None:
-        path = self._media_path(filename)
+        path = self.media_path(filename)
         try:
             return base64.b64encode(path.read_bytes()).decode()
         except FileNotFoundError:
             return None
 
     def delete_media_file(self, filename: str) -> None:
-        path = self._media_path(filename)
+        path = self.media_path(filename)
         if path.exists():
             self.col.media.trash_files([filename])
 
