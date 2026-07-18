@@ -169,6 +169,9 @@ class AnkiWrapper:
                 self._reopen_collection()
                 raise self._phase_error("Collection synchronization", error) from error
 
+            if result.new_endpoint:
+                auth.endpoint = result.new_endpoint
+
             needs_reopen = False
             if result.required in (
                 SyncCollectionResponse.FULL_SYNC,

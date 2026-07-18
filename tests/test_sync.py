@@ -135,6 +135,46 @@ def test_upload_only_response_fails_safely_and_preserves_local_collection(tmp_pa
         wrapper.close()
 
 
+def test_full_download_uses_endpoint_returned_by_collection_sync(tmp_path: Path) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    auth = SyncAuth(hkey="key", endpoint="https://sync.ankiweb.net/")
+    response = SyncCollectionResponse(
+        required=SyncCollectionResponse.FULL_DOWNLOAD,
+        new_endpoint="https://sync6.ankiweb.net/",
+        server_media_usn=42,
+    )
+    download_endpoints: list[str | None] = []
+
+    def capture_download(*, auth: SyncAuth, server_usn: int, upload: bool) -> None:
+        assert server_usn == 42
+        assert not upload
+        download_endpoints.append(auth.endpoint)
+
+    try:
+        with (
+            patch.object(wrapper.col, "sync_login", return_value=auth),
+            patch.object(wrapper.col, "sync_collection", return_value=response),
+            patch.object(wrapper.col, "close_for_full_sync"),
+            patch.object(
+                wrapper.col,
+                "full_upload_or_download",
+                side_effect=capture_download,
+            ),
+            patch.object(wrapper.col, "reopen"),
+            patch.object(
+                wrapper.col,
+                "media_sync_status",
+                return_value=_media_status(active=False),
+            ),
+        ):
+            result = wrapper.sync_to_ankiweb()
+
+        assert download_endpoints == ["https://sync6.ankiweb.net/"]
+        assert result.collection.download_reason is DownloadReason.REMOTE_ONLY
+    finally:
+        wrapper.close()
+
+
 @pytest.mark.parametrize(
     ("required", "outcome"),
     [

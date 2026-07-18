@@ -23,7 +23,7 @@ class Config(BaseSettings):
     collection_path: Path = Field(default_factory=_missing_collection_path)
 
     ankiweb_user: str | None = None
-    ankiweb_pass: str | None = None
+    ankiweb_pass: str | None = Field(default=None, repr=False)
     ankiweb_url: str | None = None
 
     @field_validator("collection_path")

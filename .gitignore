@@ -21,4 +21,6 @@ coverage.xml
 *.anki2-shm
 *.media/
 *.media.db2
+*.media.db2-wal
+*.media.db2-shm
 .devcontainer/devcontainer-lock.json

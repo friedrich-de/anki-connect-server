@@ -25,6 +25,7 @@ def test_config_custom_values(tmp_path: Path) -> None:
     assert config.port == 9000
     assert config.bind == "192.0.2.1"
     assert config.ankiweb_user == "user@example.com"
+    assert "secret" not in repr(config)
 
 
 def test_removed_full_upload_environment_is_ignored(
