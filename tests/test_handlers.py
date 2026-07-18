@@ -1,14 +1,58 @@
+from unittest.mock import patch
+
 import pytest
 
 from anki_connect_server import ANKICONNECT_API_VERSION
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.handlers import dispatch
+from anki_connect_server.sync import (
+    CollectionSyncOutcome,
+    CollectionSyncResult,
+    MediaSyncResult,
+    SyncResult,
+)
 from anki_connect_server.types import JsonObject
 
 
 @pytest.mark.asyncio
 async def test_dispatches_version(anki_wrapper: AnkiWrapper) -> None:
     assert await dispatch("version", {}, anki_wrapper) == ANKICONNECT_API_VERSION
+
+
+@pytest.mark.asyncio
+async def test_sync_compatibility_actions_remain_available(anki_wrapper: AnkiWrapper) -> None:
+    sync_result = SyncResult(
+        collection=CollectionSyncResult(
+            outcome=CollectionSyncOutcome.NO_CHANGES,
+            local_data_replaced=False,
+        ),
+        media=MediaSyncResult(),
+    )
+    with (
+        patch.object(anki_wrapper, "sync_to_ankiweb", return_value=sync_result) as sync,
+        patch.object(
+            anki_wrapper,
+            "sync_status",
+            return_value={"required": 0, "newEndpoint": None},
+        ) as status,
+        patch.object(
+            anki_wrapper,
+            "sync_media_only",
+            return_value="media sync completed",
+        ) as media,
+    ):
+        assert await dispatch("sync", {}, anki_wrapper) == sync_result.model_dump(
+            mode="json", exclude_none=True
+        )
+        assert await dispatch("syncStatus", {}, anki_wrapper) == {
+            "required": 0,
+            "newEndpoint": None,
+        }
+        assert await dispatch("syncMedia", {}, anki_wrapper) == "media sync completed"
+
+    sync.assert_called_once_with(None, None, None)
+    status.assert_called_once_with(None, None, None)
+    media.assert_called_once_with(None, None, None)
 
 
 @pytest.mark.asyncio

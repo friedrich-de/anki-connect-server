@@ -86,7 +86,6 @@ def build_tunnel_environment(
             "ANKICONNECT_COLLECTION_PATH": str(anki_settings.collection_path),
             "ANKICONNECT_PORT": str(anki_settings.port),
             "ANKICONNECT_BIND": anki_settings.bind,
-            "ANKICONNECT_FULL_UPLOAD": str(anki_settings.full_upload).lower(),
         }
     )
     optional_anki_settings = {

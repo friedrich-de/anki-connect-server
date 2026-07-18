@@ -164,13 +164,14 @@ async def handle_version(_wrapper: AnkiWrapper, _params: JsonObject) -> int:
     return ANKICONNECT_API_VERSION
 
 
-async def handle_sync(wrapper: AnkiWrapper, params: JsonObject) -> str:
-    return await asyncio.to_thread(
+async def handle_sync(wrapper: AnkiWrapper, params: JsonObject) -> JsonObject:
+    result = await asyncio.to_thread(
         wrapper.sync_to_ankiweb,
         _get_optional_str(params, "username"),
         _get_optional_str(params, "password"),
         _get_optional_str(params, "endpoint"),
     )
+    return cast(JsonObject, result.model_dump(mode="json", exclude_none=True))
 
 
 async def handle_sync_status(wrapper: AnkiWrapper, params: JsonObject) -> JsonObject:

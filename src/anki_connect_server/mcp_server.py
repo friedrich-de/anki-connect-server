@@ -29,13 +29,13 @@ from anki_connect_server.review import (
     ReviewRating,
     SubmitReviewResult,
 )
+from anki_connect_server.sync import SyncManager, SyncResult
 from anki_connect_server.tool_metadata import (
     ADDITIVE_WRITE,
     DESTRUCTIVE_IDEMPOTENT_WRITE,
     DESTRUCTIVE_OPEN_WORLD_WRITE,
     IDEMPOTENT_WRITE,
     READ_ONLY,
-    READ_ONLY_OPEN_WORLD,
     SERVER_INSTRUCTIONS,
 )
 from anki_connect_server.types import JsonObject, NoteInput
@@ -45,6 +45,7 @@ from anki_connect_server.types import JsonObject, NoteInput
 class McpState:
     wrapper: AnkiWrapper
     reviews: ReviewManager
+    syncs: SyncManager
 
 
 type AnkiMcpServer = FastMCP[dict[str, McpState]]
@@ -270,19 +271,9 @@ def export_package(
     return True
 
 
-def sync(context: Context) -> str:
-    """Sync the collection with AnkiWeb."""
-    return _get_wrapper(context).sync_to_ankiweb()
-
-
-def sync_media(context: Context) -> str:
-    """Sync only media files with AnkiWeb."""
-    return _get_wrapper(context).sync_media_only()
-
-
-def get_sync_status(context: Context) -> JsonObject:
-    """Get sync status from AnkiWeb."""
-    return _get_wrapper(context).sync_status()
+async def sync(context: Context) -> ToolResult:
+    """Synchronize collection data and media with AnkiWeb and wait for completion."""
+    return _structured_result(await _get_state(context).syncs.run(context))
 
 
 def _register_tools(server: AnkiMcpServer) -> None:
@@ -322,16 +313,22 @@ def _register_tools(server: AnkiMcpServer) -> None:
     server.tool(delete_media_file, annotations=DESTRUCTIVE_IDEMPOTENT_WRITE)
     server.tool(import_package, annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
     server.tool(export_package, annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
-    server.tool(sync, annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
-    server.tool(sync_media, annotations=DESTRUCTIVE_OPEN_WORLD_WRITE)
-    server.tool(get_sync_status, annotations=READ_ONLY_OPEN_WORLD)
+    server.tool(
+        sync,
+        annotations=DESTRUCTIVE_OPEN_WORLD_WRITE,
+        output_schema=SyncResult.model_json_schema(),
+    )
 
 
 def create_mcp_server(wrapper_factory: WrapperFactory = create_anki_wrapper) -> AnkiMcpServer:
     @asynccontextmanager
     async def lifespan(_server: AnkiMcpServer) -> AsyncGenerator[dict[str, McpState]]:
         anki_wrapper = wrapper_factory()
-        state = McpState(wrapper=anki_wrapper, reviews=ReviewManager(anki_wrapper))
+        state = McpState(
+            wrapper=anki_wrapper,
+            reviews=ReviewManager(anki_wrapper),
+            syncs=SyncManager(anki_wrapper),
+        )
         try:
             yield {_STATE_CONTEXT_KEY: state}
         finally:

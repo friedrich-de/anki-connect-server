@@ -1,4 +1,5 @@
 import json
+from collections.abc import Callable
 from typing import cast
 from unittest.mock import patch
 
@@ -8,6 +9,12 @@ from mcp.types import AudioContent, ImageContent, TextContent
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.mcp_server import create_mcp_server
+from anki_connect_server.sync import (
+    CollectionSyncOutcome,
+    CollectionSyncResult,
+    MediaSyncResult,
+    SyncResult,
+)
 from anki_connect_server.types import JsonObject
 
 EXPECTED_TOOLS = {
@@ -30,7 +37,6 @@ EXPECTED_TOOLS = {
     "get_model_templates",
     "get_next_review_card",
     "get_review_queue",
-    "get_sync_status",
     "import_package",
     "inspect_cards",
     "remove_tags",
@@ -39,7 +45,6 @@ EXPECTED_TOOLS = {
     "store_media_file",
     "suspend_cards",
     "sync",
-    "sync_media",
     "submit_review",
     "unsuspend_cards",
 }
@@ -54,6 +59,8 @@ REMOVED_MCP_TOOLS = {
     "get_deck_names_and_ids",
     "get_media_dir_path",
     "get_notes_info",
+    "get_sync_status",
+    "sync_media",
 }
 
 
@@ -63,7 +70,7 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
         tools = {tool.name: tool for tool in await client.list_tools()}
 
     assert tools.keys() == EXPECTED_TOOLS
-    assert len(tools) == 31
+    assert len(tools) == 29
     assert REMOVED_MCP_TOOLS.isdisjoint(tools)
     for tool in tools.values():
         tool_schema = cast(JsonObject, tool.inputSchema)
@@ -116,6 +123,11 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
         "fields",
         "all",
     ]
+
+    sync_schema = cast(JsonObject, tools["sync"].outputSchema)
+    sync_properties = sync_schema["properties"]
+    assert isinstance(sync_properties, dict)
+    assert set(sync_properties) == {"status", "collection", "media", "server_message"}
 
 
 @pytest.mark.asyncio
@@ -230,6 +242,51 @@ async def test_interactive_review_tools_share_session_and_retry_safely(
     assert any(isinstance(block, ImageContent) for block in first.content)
     assert any(isinstance(block, AudioContent) for block in first.content)
     assert applied.structured_content == retried.structured_content
+
+
+@pytest.mark.asyncio
+async def test_sync_is_one_foreground_tool_with_progress_and_structured_result(
+    anki_wrapper: AnkiWrapper,
+) -> None:
+    progress_messages: list[str] = []
+    expected = SyncResult(
+        collection=CollectionSyncResult(
+            outcome=CollectionSyncOutcome.MERGED,
+            local_data_replaced=False,
+        ),
+        media=MediaSyncResult(checked="4", added="1", removed="0"),
+    )
+
+    def run_sync(*, progress: Callable[[str], None] | None = None) -> SyncResult:
+        assert progress is not None
+        progress("Authenticating with AnkiWeb")
+        progress("Synchronizing collection")
+        progress("Synchronizing media")
+        progress("Synchronization completed")
+        return expected
+
+    async def on_progress(
+        _progress: float,
+        _total: float | None,
+        message: str | None,
+    ) -> None:
+        if message is not None:
+            progress_messages.append(message)
+
+    with patch.object(anki_wrapper, "sync_to_ankiweb", side_effect=run_sync):
+        async with Client(
+            create_mcp_server(lambda: anki_wrapper),
+            progress_handler=on_progress,
+        ) as client:
+            result = await client.call_tool("sync")
+
+    assert result.structured_content == expected.model_dump(mode="json", exclude_none=True)
+    assert progress_messages == [
+        "Authenticating with AnkiWeb",
+        "Synchronizing collection",
+        "Synchronizing media",
+        "Synchronization completed",
+    ]
 
 
 @pytest.mark.asyncio

@@ -25,7 +25,6 @@ class Config(BaseSettings):
     ankiweb_user: str | None = None
     ankiweb_pass: str | None = None
     ankiweb_url: str | None = None
-    full_upload: bool = False
 
     @field_validator("collection_path")
     @classmethod

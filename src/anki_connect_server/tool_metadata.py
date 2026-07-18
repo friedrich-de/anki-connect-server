@@ -10,6 +10,8 @@ SERVER_INSTRUCTIONS = (
     "Use hard or easy only when the user explicitly requests or supplies that rating. Report any "
     "submission failure before fetching the next card, then repeat one card at a time. The user's "
     "review request authorizes each inferred rating. Ratings remain local until sync is called. "
+    "The sync tool synchronizes collection data and media; wait for its final result before "
+    "claiming synchronization completed. Full conflicts always download from AnkiWeb. "
     "Use these tools to inspect and modify the user's Anki collection. Before adding a note, "
     "identify the target deck, note type, and required fields with get_deck_names, "
     "get_model_names, and get_model_field_names. Before changing or deleting existing data, "
@@ -25,13 +27,6 @@ READ_ONLY = ToolAnnotations(
     destructiveHint=False,
     idempotentHint=True,
     openWorldHint=False,
-)
-
-READ_ONLY_OPEN_WORLD = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=True,
 )
 
 ADDITIVE_WRITE = ToolAnnotations(

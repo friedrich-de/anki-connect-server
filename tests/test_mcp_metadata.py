@@ -10,7 +10,6 @@ from anki_connect_server.tool_metadata import (
     DESTRUCTIVE_OPEN_WORLD_WRITE,
     IDEMPOTENT_WRITE,
     READ_ONLY,
-    READ_ONLY_OPEN_WORLD,
     SERVER_INSTRUCTIONS,
 )
 
@@ -34,7 +33,6 @@ EXPECTED_ANNOTATIONS = {
     "get_model_templates": READ_ONLY,
     "get_next_review_card": READ_ONLY,
     "get_review_queue": READ_ONLY,
-    "get_sync_status": READ_ONLY_OPEN_WORLD,
     "import_package": DESTRUCTIVE_OPEN_WORLD_WRITE,
     "inspect_cards": READ_ONLY,
     "remove_tags": DESTRUCTIVE_IDEMPOTENT_WRITE,
@@ -43,7 +41,6 @@ EXPECTED_ANNOTATIONS = {
     "store_media_file": IDEMPOTENT_WRITE,
     "suspend_cards": DESTRUCTIVE_IDEMPOTENT_WRITE,
     "sync": DESTRUCTIVE_OPEN_WORLD_WRITE,
-    "sync_media": DESTRUCTIVE_OPEN_WORLD_WRITE,
     "submit_review": IDEMPOTENT_WRITE,
     "unsuspend_cards": DESTRUCTIVE_IDEMPOTENT_WRITE,
 }
@@ -81,15 +78,6 @@ def test_annotation_profiles_are_explicit() -> None:
             openWorldHint=False,
         )
         == READ_ONLY
-    )
-    assert (
-        ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=True,
-        )
-        == READ_ONLY_OPEN_WORLD
     )
     assert (
         ToolAnnotations(
@@ -153,6 +141,9 @@ async def test_server_instructions_are_exposed_during_initialization(
         "search_notes",
         "inspect_cards",
         "find_cards only for card-specific Anki queries",
+        "sync tool synchronizes collection data and media",
+        "wait for its final result",
+        "Full conflicts always download",
         "state-changing operations",
     ):
         assert phrase in SERVER_INSTRUCTIONS

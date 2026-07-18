@@ -49,7 +49,6 @@ Do not open the same collection concurrently in this server and another Anki pro
 | `ANKICONNECT_ANKIWEB_USER` | For sync | — | AnkiWeb username |
 | `ANKICONNECT_ANKIWEB_PASS` | For sync | — | AnkiWeb password |
 | `ANKICONNECT_ANKIWEB_URL` | No | AnkiWeb | Custom sync-server URL |
-| `ANKICONNECT_FULL_UPLOAD` | No | `false` | Permit a full upload when AnkiWeb requests one |
 | `CONTROL_PLANE_TUNNEL_ID` | For tunnel | — | OpenAI Secure MCP Tunnel ID |
 | `CONTROL_PLANE_API_KEY` | For tunnel | — | Runtime API key with Tunnels Read + Use |
 | `TUNNEL_CLIENT_PATH` | No | `tunnel-client` | Tunnel client executable name or path |
@@ -61,6 +60,7 @@ authenticated reverse proxy with TLS.
 
 - Use `POST /`; the former `POST /api` alias has been removed.
 - Use `ANKICONNECT_COLLECTION_PATH`; the former `ANKI_COLLECTION_PATH` alias has been removed.
+- `ANKICONNECT_FULL_UPLOAD` has been removed. Full collection uploads are always prohibited.
 
 ## AnkiConnect-compatible API
 
@@ -119,7 +119,24 @@ The `mcp` command runs over stdio. Its tool names are:
 - Interactive review: `get_review_queue`, `get_next_review_card`, `submit_review`
 - Tags and media: `get_all_tags`, `add_tags`, `remove_tags`, `store_media_file`,
   `retrieve_media_file`, `delete_media_file`
-- Packages and sync: `import_package`, `export_package`, `sync`, `sync_media`, `get_sync_status`
+- Packages and sync: `import_package`, `export_package`, `sync`
+
+### Synchronization
+
+The MCP `sync` tool synchronizes collection data and media in one foreground operation. Its call
+remains pending until both phases finish, and compatible MCP clients receive progress messages
+while it runs. A successful result reports whether the collection had no changes, was merged, or
+was replaced by a full download, together with the final media counters.
+
+Normal synchronization can merge local changes into AnkiWeb. When Anki reports a conflict or a
+remote-only collection, this server always downloads and replaces local collection data; it never
+performs a full upload that replaces AnkiWeb. If AnkiWeb is empty and only an upload is possible,
+the tool fails and preserves the local collection. Media continues to use Anki's normal
+bidirectional merge behavior.
+
+The HTTP compatibility actions remain available. `sync` includes collection data and media and
+waits for both; `syncMedia` waits for media completion; `syncStatus` reports whether another
+collection sync is required and is not a runtime progress endpoint.
 
 ### Efficient discovery and inspection
 
@@ -149,6 +166,7 @@ The optimized tools replace several former low-level MCP tools:
 | `get_deck_names_and_ids` | `get_deck_names`; no MCP operation requires deck IDs |
 | `get_media_dir_path` | Removed; server filesystem paths are not exposed to MCP clients |
 | `get_api_version` | Removed; the AnkiConnect protocol version is not an MCP concern |
+| `sync_media`, `get_sync_status` | `sync`, which includes media and waits for completion |
 
 Their corresponding AnkiConnect HTTP actions remain supported.
 

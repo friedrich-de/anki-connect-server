@@ -92,7 +92,6 @@ def test_tunnel_environment_forwards_tunnel_and_anki_settings(tmp_path: Path) ->
             collection_path=tmp_path / "collection.anki2",
             ankiweb_user="user@example.com",
             ankiweb_pass="anki-secret",
-            full_upload=True,
         ),
         {"PATH": "/usr/bin"},
     )
@@ -104,7 +103,6 @@ def test_tunnel_environment_forwards_tunnel_and_anki_settings(tmp_path: Path) ->
         "ANKICONNECT_COLLECTION_PATH": str(tmp_path / "collection.anki2"),
         "ANKICONNECT_PORT": "8765",
         "ANKICONNECT_BIND": "127.0.0.1",
-        "ANKICONNECT_FULL_UPLOAD": "true",
         "ANKICONNECT_ANKIWEB_USER": "user@example.com",
         "ANKICONNECT_ANKIWEB_PASS": "anki-secret",
     }

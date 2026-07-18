@@ -11,7 +11,6 @@ def test_config_defaults(tmp_path: Path) -> None:
     assert config.port == 8765
     assert config.bind == "127.0.0.1"
     assert config.ankiweb_user is None
-    assert config.full_upload is False
 
 
 def test_config_custom_values(tmp_path: Path) -> None:
@@ -21,13 +20,23 @@ def test_config_custom_values(tmp_path: Path) -> None:
         bind="192.0.2.1",
         ankiweb_user="user@example.com",
         ankiweb_pass="secret",
-        full_upload=True,
     )
 
     assert config.port == 9000
     assert config.bind == "192.0.2.1"
     assert config.ankiweb_user == "user@example.com"
-    assert config.full_upload is True
+
+
+def test_removed_full_upload_environment_is_ignored(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("ANKICONNECT_FULL_UPLOAD", "true")
+
+    config = Config(collection_path=tmp_path / "collection.anki2")
+
+    assert config.collection_path == tmp_path / "collection.anki2"
+    assert "full_upload" not in Config.model_fields
 
 
 def test_collection_path_from_canonical_environment(

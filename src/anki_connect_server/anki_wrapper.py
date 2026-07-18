@@ -1,6 +1,8 @@
 import base64
 import logging
 import re
+import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Literal, cast
@@ -18,10 +20,18 @@ from anki.errors import NotFoundError
 from anki.models import FieldDict, NotetypeDict, TemplateDict
 from anki.notes import Note, NoteId
 from anki.sync import SyncAuth
-from anki.sync_pb2 import SyncCollectionResponse
+from anki.sync_pb2 import MediaSyncStatusResponse, SyncCollectionResponse
 from google.protobuf.json_format import MessageToDict
 
 from anki_connect_server.config import Config, get_config
+from anki_connect_server.sync import (
+    CollectionSyncOutcome,
+    CollectionSyncResult,
+    DownloadReason,
+    MediaSyncResult,
+    SyncError,
+    SyncResult,
+)
 from anki_connect_server.types import (
     CardAnswerInput,
     CardTemplateInput,
@@ -36,6 +46,8 @@ Collection = anki.collection.Collection
 
 logger = logging.getLogger(__name__)
 
+type SyncProgressCallback = Callable[[str], None]
+
 
 class AnkiWrapper:
     def __init__(self, collection_path: str | Path, *, settings: Config | None = None) -> None:
@@ -45,6 +57,7 @@ class AnkiWrapper:
         self.col = Collection(str(self.collection_path))
         self._closed = False
         self._collection_generation = 0
+        self._sync_lock = threading.Lock()
 
     @property
     def collection_generation(self) -> int:
@@ -78,60 +91,167 @@ class AnkiWrapper:
             )
         return user, pass_, url
 
-    def _full_sync(self, auth: SyncAuth, server_usn: int, *, upload: bool) -> None:
+    def _full_download(self, auth: SyncAuth, server_usn: int) -> None:
         self.col.close_for_full_sync()
         self._closed = True
         try:
-            self.col.full_upload_or_download(auth=auth, server_usn=server_usn, upload=upload)
+            self.col.full_upload_or_download(auth=auth, server_usn=server_usn, upload=False)
         finally:
             self.col.reopen(after_full_sync=True)
             self._closed = False
             self._collection_generation += 1
+
+    @staticmethod
+    def _report(progress: SyncProgressCallback | None, message: str) -> None:
+        if progress is not None:
+            progress(message)
+
+    def _wait_for_media(self, progress: SyncProgressCallback | None) -> MediaSyncResult:
+        self._report(progress, "Synchronizing media")
+        latest: tuple[str, str, str] | None = None
+        while True:
+            status = self.col.media_sync_status()
+            counters = self._media_counters(status)
+            if counters != latest and any(counters):
+                checked, added, removed = counters
+                self._report(
+                    progress,
+                    f"Media progress: checked {checked or '0'}, added {added or '0'}, "
+                    f"removed {removed or '0'}",
+                )
+                latest = counters
+            if not status.active:
+                return MediaSyncResult(
+                    checked=counters[0] or None,
+                    added=counters[1] or None,
+                    removed=counters[2] or None,
+                )
+            time.sleep(0.1)
+
+    @staticmethod
+    def _media_counters(status: MediaSyncStatusResponse) -> tuple[str, str, str]:
+        if not status.HasField("progress"):
+            return "", "", ""
+        return status.progress.checked, status.progress.added, status.progress.removed
+
+    @staticmethod
+    def _phase_error(phase: str, error: Exception) -> SyncError:
+        return SyncError(f"{phase} failed: {error}")
 
     def sync_to_ankiweb(
         self,
         username: str | None = None,
         password: str | None = None,
         endpoint: str | None = None,
-    ) -> str:
-        user, pass_, url = self._credentials(
-            username,
-            password,
-            endpoint,
-            operation="sync",
-        )
+        *,
+        progress: SyncProgressCallback | None = None,
+    ) -> SyncResult:
+        if not self._sync_lock.acquire(blocking=False):
+            raise SyncError("A synchronization is already in progress")
         try:
-            auth = self.col.sync_login(username=user, password=pass_, endpoint=url)
-            result = self.col.sync_collection(auth, sync_media=False)
+            user, pass_, url = self._credentials(
+                username,
+                password,
+                endpoint,
+                operation="sync",
+            )
+            self._report(progress, "Authenticating with AnkiWeb")
+            try:
+                auth = self.col.sync_login(username=user, password=pass_, endpoint=url)
+            except Exception as error:
+                raise self._phase_error("AnkiWeb authentication", error) from error
+
+            self._report(progress, "Synchronizing collection")
+            try:
+                result = self.col.sync_collection(auth, sync_media=True)
+            except Exception as error:
+                self.close()
+                self._reopen_collection()
+                raise self._phase_error("Collection synchronization", error) from error
+
+            needs_reopen = False
             if result.required in (
                 SyncCollectionResponse.FULL_SYNC,
                 SyncCollectionResponse.FULL_DOWNLOAD,
             ):
-                self._full_sync(auth, result.server_media_usn, upload=False)
+                reason = (
+                    DownloadReason.CONFLICT
+                    if result.required == SyncCollectionResponse.FULL_SYNC
+                    else DownloadReason.REMOTE_ONLY
+                )
+                self._report(
+                    progress,
+                    "Downloading the AnkiWeb collection to resolve a conflict"
+                    if reason is DownloadReason.CONFLICT
+                    else "Downloading the AnkiWeb collection",
+                )
+                try:
+                    self._full_download(auth, result.server_media_usn)
+                except Exception as error:
+                    raise self._phase_error("Full collection download", error) from error
+                collection = CollectionSyncResult(
+                    outcome=CollectionSyncOutcome.DOWNLOADED,
+                    download_reason=reason,
+                    local_data_replaced=True,
+                )
             elif result.required == SyncCollectionResponse.FULL_UPLOAD:
-                if self.settings.full_upload:
-                    self._full_sync(auth, result.server_media_usn, upload=True)
-                else:
-                    logger.warning(
-                        "Full upload required but ANKICONNECT_FULL_UPLOAD=false; skipping"
-                    )
+                raise SyncError(
+                    "AnkiWeb collection is empty and only a full upload is possible; "
+                    "full uploads are disabled by policy and the local collection was preserved"
+                )
+            elif result.required == SyncCollectionResponse.NORMAL_SYNC:
+                collection = CollectionSyncResult(
+                    outcome=CollectionSyncOutcome.MERGED,
+                    local_data_replaced=False,
+                )
+                needs_reopen = True
+            elif result.required == SyncCollectionResponse.NO_CHANGES:
+                collection = CollectionSyncResult(
+                    outcome=CollectionSyncOutcome.NO_CHANGES,
+                    local_data_replaced=False,
+                )
+                needs_reopen = True
+            else:
+                raise SyncError(f"Unsupported synchronization requirement: {result.required}")
+
+            try:
+                media = self._wait_for_media(progress)
+            except Exception as error:
+                raise SyncError(
+                    "Media synchronization failed after collection synchronization completed; "
+                    f"media remains incomplete: {error}"
+                ) from error
+            finally:
+                if needs_reopen:
                     self.close()
                     self._reopen_collection()
-            else:
-                self.close()
-                self._reopen_collection()
+
+            self._report(progress, "Synchronization completed")
+            logger.info(
+                "Sync completed: collection=%s, media=%s",
+                collection.outcome,
+                media.outcome,
+            )
+            return SyncResult(
+                collection=collection,
+                media=media,
+                server_message=result.server_message or None,
+            )
         except Exception:
             logger.exception("AnkiWeb sync failed")
             if self._closed:
                 self._reopen_collection()
             raise
+        finally:
+            self._sync_lock.release()
 
-        logger.info(
-            "Sync completed: host=%s, required=%s",
-            result.host_number,
-            result.required,
-        )
-        return f"sync completed: host={result.host_number}, required={result.required}"
+    def abort_sync(self) -> None:
+        """Best-effort cancellation of collection and media synchronization."""
+        for abort in (self.col.abort_sync, self.col.abort_media_sync):
+            try:
+                abort()
+            except Exception:
+                logger.exception("Failed to abort an Anki synchronization operation")
 
     def deck_names(self) -> list[str]:
         return [deck.name for deck in self.col.decks.all_names_and_ids()]
@@ -572,16 +692,28 @@ class AnkiWrapper:
         password: str | None = None,
         endpoint: str | None = None,
     ) -> str:
-        user, pass_, url = self._credentials(
-            username,
-            password,
-            endpoint,
-            operation="media sync",
-        )
-        auth = self.col.sync_login(username=user, password=pass_, endpoint=url)
-        self.col.sync_media(auth)
-        logger.info("Media sync completed")
-        return "media sync completed"
+        if not self._sync_lock.acquire(blocking=False):
+            raise SyncError("A synchronization is already in progress")
+        try:
+            user, pass_, url = self._credentials(
+                username,
+                password,
+                endpoint,
+                operation="media sync",
+            )
+            try:
+                auth = self.col.sync_login(username=user, password=pass_, endpoint=url)
+            except Exception as error:
+                raise self._phase_error("AnkiWeb authentication", error) from error
+            try:
+                self.col.sync_media(auth)
+                self._wait_for_media(None)
+            except Exception as error:
+                raise self._phase_error("Media synchronization", error) from error
+            logger.info("Media sync completed")
+            return "media sync completed"
+        finally:
+            self._sync_lock.release()
 
 
 type WrapperFactory = Callable[[], AnkiWrapper]
