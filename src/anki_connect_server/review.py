@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import json
 import mimetypes
-import re
 import secrets
 import threading
 import time
@@ -13,7 +12,6 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import StrEnum
-from html.parser import HTMLParser
 from pathlib import Path
 from typing import Literal, Protocol, cast
 from urllib.parse import unquote, urlsplit
@@ -28,6 +26,7 @@ from mcp.types import AudioContent, ContentBlock, ImageContent, TextContent
 from pydantic import BaseModel, ConfigDict, Field
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
+from anki_connect_server.content import MediaExpectation, render_anki_text
 
 type ReviewSide = Literal["question", "answer"]
 type QueueKind = Literal["new", "learning", "review"]
@@ -41,49 +40,12 @@ type MediaKind = Literal[
     "unsupported",
     "oversized",
 ]
-type MediaExpectation = Literal["image", "audio", "video", "auto"]
 type CardFingerprint = tuple[int, ...]
 
 REVIEW_TTL_SECONDS = 60 * 60
 MAX_MEDIA_ITEM_BYTES = 5 * 1024 * 1024
 MAX_MEDIA_TOTAL_BYTES = 10 * 1024 * 1024
 
-_AV_REFERENCE = re.compile(r"\[anki:play:([qa]):(\d+)]")
-_SPACE = re.compile(r"[ \t\f\v]+")
-_NEWLINES = re.compile(r"\n{3,}")
-_BLOCK_TAGS = frozenset(
-    [
-        "address",
-        "article",
-        "aside",
-        "blockquote",
-        "div",
-        "dl",
-        "fieldset",
-        "figcaption",
-        "figure",
-        "footer",
-        "form",
-        "h1",
-        "h2",
-        "h3",
-        "h4",
-        "h5",
-        "h6",
-        "header",
-        "hr",
-        "li",
-        "main",
-        "nav",
-        "ol",
-        "p",
-        "pre",
-        "section",
-        "table",
-        "tr",
-        "ul",
-    ]
-)
 _MIME_OVERRIDES = {
     ".jpeg": "image/jpeg",
     ".jpg": "image/jpeg",
@@ -299,75 +261,6 @@ class _MediaCollector:
         return f"[{entry.kind}: {entry.filename or entry.source}]"
 
 
-class _TextRenderer(HTMLParser):
-    def __init__(
-        self,
-        collector: _MediaCollector,
-        side: ReviewSide,
-        question_av: list[AVTag],
-        answer_av: list[AVTag],
-    ) -> None:
-        super().__init__(convert_charrefs=True)
-        self.collector = collector
-        self.side: ReviewSide = side
-        self.av = {"q": question_av, "a": answer_av}
-        self.parts: list[str] = []
-        self.ignored = 0
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        attributes = dict(attrs)
-        if tag == "style" or (
-            tag == "script" and not (attributes.get("type") or "").startswith("math/")
-        ):
-            self.ignored += 1
-            return
-        if self.ignored:
-            return
-        if tag == "br" or tag in _BLOCK_TAGS:
-            self.parts.append("\n")
-        source = attributes.get("src")
-        if not source or tag not in ("img", "audio", "video", "source"):
-            return
-        expected = cast(MediaExpectation, {"img": "image"}.get(tag, tag))
-        if tag == "source":
-            family = (attributes.get("type") or "").partition("/")[0]
-            expected = cast(MediaExpectation, family if family in ("audio", "video") else "auto")
-        self.parts.append(self.collector.add(source, self.side, expected))
-
-    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        self.handle_starttag(tag, attrs)
-
-    def handle_endtag(self, tag: str) -> None:
-        if self.ignored:
-            if tag in ("style", "script"):
-                self.ignored -= 1
-            return
-        if tag in _BLOCK_TAGS:
-            self.parts.append("\n")
-
-    def handle_data(self, data: str) -> None:
-        if self.ignored:
-            return
-        position = 0
-        for match in _AV_REFERENCE.finditer(data):
-            self.parts.append(data[position : match.start()])
-            tags = self.av[match.group(1)]
-            index = int(match.group(2))
-            marker = (
-                self.collector.add_av(tags[index], self.side)
-                if index < len(tags)
-                else "[unsupported: invalid Anki media reference]"
-            )
-            self.parts.append(marker)
-            position = match.end()
-        self.parts.append(data[position:])
-
-    def text(self) -> str:
-        text = "".join(self.parts).replace("\r\n", "\n").replace("\r", "\n")
-        lines = (_SPACE.sub(" ", line).strip() for line in text.splitlines())
-        return _NEWLINES.sub("\n\n", "\n".join(lines)).strip()
-
-
 @dataclass
 class _Review:
     review_id: str
@@ -569,10 +462,13 @@ class ReviewManager:
         answer_av: list[AVTag],
         media: _MediaCollector,
     ) -> str:
-        renderer = _TextRenderer(media, side, question_av, answer_av)
-        renderer.feed(html)
-        renderer.close()
-        return renderer.text()
+        return render_anki_text(
+            html,
+            media_reference=lambda source, expected: media.add(source, side, expected),
+            av_reference=lambda tag: media.add_av(tag, side),
+            question_av=question_av,
+            answer_av=answer_av,
+        )
 
     @staticmethod
     def _fingerprint(card: Card) -> CardFingerprint:

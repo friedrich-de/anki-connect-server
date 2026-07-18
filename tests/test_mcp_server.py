@@ -1,3 +1,4 @@
+import json
 from typing import cast
 from unittest.mock import patch
 
@@ -13,8 +14,6 @@ EXPECTED_TOOLS = {
     "add_note",
     "add_tags",
     "are_due",
-    "are_suspended",
-    "cards_to_notes",
     "change_deck",
     "create_deck",
     "delete_decks",
@@ -22,32 +21,39 @@ EXPECTED_TOOLS = {
     "delete_notes",
     "export_package",
     "find_cards",
-    "find_notes",
     "get_all_tags",
-    "get_api_version",
-    "get_card_intervals",
-    "get_cards_info",
     "get_deck_config",
     "get_deck_names",
-    "get_deck_names_and_ids",
-    "get_media_dir_path",
     "get_model_field_names",
     "get_model_names",
     "get_model_styling",
     "get_model_templates",
-    "get_notes_info",
     "get_next_review_card",
     "get_review_queue",
     "get_sync_status",
     "import_package",
+    "inspect_cards",
     "remove_tags",
     "retrieve_media_file",
+    "search_notes",
     "store_media_file",
     "suspend_cards",
     "sync",
     "sync_media",
     "submit_review",
     "unsuspend_cards",
+}
+
+REMOVED_MCP_TOOLS = {
+    "are_suspended",
+    "cards_to_notes",
+    "find_notes",
+    "get_api_version",
+    "get_card_intervals",
+    "get_cards_info",
+    "get_deck_names_and_ids",
+    "get_media_dir_path",
+    "get_notes_info",
 }
 
 
@@ -57,6 +63,8 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
         tools = {tool.name: tool for tool in await client.list_tools()}
 
     assert tools.keys() == EXPECTED_TOOLS
+    assert len(tools) == 31
+    assert REMOVED_MCP_TOOLS.isdisjoint(tools)
     for tool in tools.values():
         tool_schema = cast(JsonObject, tool.inputSchema)
         tool_properties = tool_schema["properties"]
@@ -74,6 +82,40 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
     rating = review_properties["rating"]
     assert isinstance(rating, dict)
     assert rating["enum"] == ["again", "hard", "good", "easy"]
+
+    search_schema = cast(JsonObject, tools["search_notes"].inputSchema)
+    search_properties = search_schema["properties"]
+    assert isinstance(search_properties, dict)
+    content = search_properties["content"]
+    assert isinstance(content, dict)
+    assert content["enum"] == ["preview", "fields"]
+    assert search_properties["limit"] == {
+        "default": 20,
+        "maximum": 100,
+        "minimum": 1,
+        "type": "integer",
+    }
+
+    inspect_schema = cast(JsonObject, tools["inspect_cards"].inputSchema)
+    inspect_properties = inspect_schema["properties"]
+    assert isinstance(inspect_properties, dict)
+    property_selection = inspect_properties["properties"]
+    assert isinstance(property_selection, dict)
+    options = property_selection["anyOf"]
+    assert isinstance(options, list)
+    array_option = options[0]
+    assert isinstance(array_option, dict)
+    items = array_option["items"]
+    assert isinstance(items, dict)
+    assert items["enum"] == [
+        "identity",
+        "state",
+        "scheduling",
+        "timestamps",
+        "history",
+        "fields",
+        "all",
+    ]
 
 
 @pytest.mark.asyncio
@@ -100,21 +142,49 @@ async def test_representative_mcp_tools_use_lifespan_wrapper(
             (await client.call_tool("find_cards", {"query": f"nid:{note_id}"})).data,
         )
         deck_names = cast(list[str], (await client.call_tool("get_deck_names")).data)
-        note_ids = cast(
-            list[int],
-            (await client.call_tool("cards_to_notes", {"cards": card_ids})).data,
+        search = await client.call_tool(
+            "search_notes",
+            {"query": f"nid:{note_id}", "content": "fields"},
         )
-        note_info = cast(
-            list[JsonObject],
-            (await client.call_tool("get_notes_info", {"notes": [note_id]})).data,
+        suspended = cast(
+            bool,
+            (await client.call_tool("suspend_cards", {"cards": card_ids})).data,
         )
-        api_version = cast(int, (await client.call_tool("get_api_version")).data)
+        inspection = await client.call_tool(
+            "inspect_cards",
+            {"note_ids": [note_id]},
+        )
 
     assert deck_id > 0
     assert "MCP" in deck_names
-    assert note_ids == [note_id]
-    assert note_info[0]["noteId"] == note_id
-    assert api_version == 6
+    assert suspended
+    search_data = cast(JsonObject, search.structured_content)
+    search_notes = search_data["notes"]
+    assert isinstance(search_notes, list)
+    assert search_data["total"] == 1
+    assert search_notes[0] == {
+        "note_id": note_id,
+        "model": "Basic",
+        "tags": [],
+        "fields": {"Front": "MCP question", "Back": "answer"},
+    }
+    inspection_data = cast(JsonObject, inspection.structured_content)
+    inspected_cards = inspection_data["cards"]
+    assert isinstance(inspected_cards, list)
+    inspected = inspected_cards[0]
+    assert isinstance(inspected, dict)
+    assert set(inspected) == {"card_id", "identity", "state", "scheduling"}
+    identity = inspected["identity"]
+    state = inspected["state"]
+    scheduling = inspected["scheduling"]
+    assert isinstance(identity, dict)
+    assert identity["note_id"] == note_id
+    assert isinstance(state, dict)
+    assert state["suspended"] is True
+    assert isinstance(scheduling, dict)
+    assert scheduling["interval_days"] == 0
+    assert isinstance(inspection.content[0], TextContent)
+    assert json.loads(inspection.content[0].text) == inspection_data
 
 
 @pytest.mark.asyncio

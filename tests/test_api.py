@@ -10,7 +10,7 @@ from httpx import ASGITransport, AsyncClient
 
 from anki_connect_server.anki_wrapper import AnkiWrapper
 from anki_connect_server.api import create_app
-from anki_connect_server.types import JsonObject, NoteInput
+from anki_connect_server.types import JsonObject, JsonValue, NoteInput
 
 
 @asynccontextmanager
@@ -71,6 +71,49 @@ async def test_api_runs_representative_action(anki_wrapper: AnkiWrapper) -> None
     assert response.status_code == 200
     assert isinstance(data["result"], int)
     assert data["error"] is None
+
+
+@pytest.mark.asyncio
+async def test_removed_mcp_tools_remain_available_as_ankiconnect_actions(
+    anki_wrapper: AnkiWrapper,
+) -> None:
+    note_id = anki_wrapper.add_note(
+        NoteInput(
+            deckName="Default",
+            modelName="Basic",
+            fields={"Front": "HTTP compatibility", "Back": "Answer"},
+        )
+    )
+    assert note_id is not None
+    card_id = anki_wrapper.find_cards(f"nid:{note_id}")[0]
+    requests: list[tuple[str, JsonObject]] = [
+        ("version", {}),
+        ("findNotes", {"query": f"nid:{note_id}"}),
+        ("notesInfo", {"notes": [note_id]}),
+        ("cardsInfo", {"cards": [card_id]}),
+        ("cardsToNotes", {"cards": [card_id]}),
+        ("areSuspended", {"cards": [card_id]}),
+        ("getIntervals", {"cards": [card_id]}),
+        ("getMediaDirPath", {}),
+    ]
+
+    async with _app_client(anki_wrapper) as client:
+        results: list[JsonValue] = []
+        for action, params in requests:
+            response = await client.post("/", json={"action": action, "params": params})
+            payload = cast(JsonObject, response.json())
+            assert response.status_code == 200
+            assert payload["error"] is None
+            results.append(payload["result"])
+
+    assert results[0] == 6
+    assert results[1] == [note_id]
+    assert cast(list[JsonObject], results[2])[0]["noteId"] == note_id
+    assert cast(list[JsonObject], results[3])[0]["cardId"] == card_id
+    assert results[4] == [note_id]
+    assert results[5] == [False]
+    assert results[6] == [0]
+    assert isinstance(results[7], str)
 
 
 @pytest.mark.asyncio

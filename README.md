@@ -111,18 +111,46 @@ The health endpoint is available at `GET /health`.
 
 The `mcp` command runs over stdio. Its tool names are:
 
-- Decks: `get_deck_names`, `get_deck_names_and_ids`, `create_deck`, `delete_decks`,
-  `change_deck`, `get_deck_config`
+- Decks: `get_deck_names`, `create_deck`, `delete_decks`, `change_deck`, `get_deck_config`
 - Models: `get_model_names`, `get_model_field_names`, `get_model_templates`,
   `get_model_styling`
-- Notes and cards: `add_note`, `find_notes`, `get_notes_info`, `delete_notes`, `find_cards`,
-  `get_cards_info`, `suspend_cards`, `unsuspend_cards`, `are_suspended`, `are_due`,
-  `get_card_intervals`, `cards_to_notes`
+- Notes and cards: `add_note`, `search_notes`, `delete_notes`, `find_cards`, `inspect_cards`,
+  `suspend_cards`, `unsuspend_cards`, `are_due`
 - Interactive review: `get_review_queue`, `get_next_review_card`, `submit_review`
-- Tags and media: `get_all_tags`, `add_tags`, `remove_tags`, `get_media_dir_path`,
-  `store_media_file`, `retrieve_media_file`, `delete_media_file`
-- Packages and sync: `import_package`, `export_package`, `sync`, `sync_media`,
-  `get_sync_status`, `get_api_version`
+- Tags and media: `get_all_tags`, `add_tags`, `remove_tags`, `store_media_file`,
+  `retrieve_media_file`, `delete_media_file`
+- Packages and sync: `import_package`, `export_package`, `sync`, `sync_media`, `get_sync_status`
+
+### Efficient discovery and inspection
+
+Use `search_notes` for broad discovery. It returns at most 20 short, cleaned previews by default;
+use `limit` and `offset` to page through up to 100 results at a time, or set `content="fields"`
+to retrieve every non-empty cleaned field for that page. Presentation HTML is removed and media
+is represented by concise text markers without embedding or reading binary files.
+
+After narrowing the result to note or card IDs, use `inspect_cards` for selected details. Its
+default response contains identity, state, and scheduling only. Request any combination of
+`timestamps`, `history`, or `fields`, or request `all`; history defaults to the newest 20 entries.
+The tool reports missing IDs explicitly and loads fields shared by sibling cards only once.
+
+Use `find_cards` only when a card-scoped Anki query is required, such as finding suspended cards
+or selecting a particular card template. Rendered questions, answers, and binary image/audio MCP
+content remain exclusive to the interactive review workflow.
+
+The optimized tools replace several former low-level MCP tools:
+
+| Former MCP tool | Replacement |
+| --- | --- |
+| `find_notes`, `get_notes_info` | `search_notes`, using `content="fields"` when needed |
+| `get_cards_info` | `inspect_cards` with only the required properties |
+| `cards_to_notes` | `inspect_cards` with `identity` |
+| `are_suspended` | `inspect_cards` with `state` |
+| `get_card_intervals` | `inspect_cards` with `scheduling` |
+| `get_deck_names_and_ids` | `get_deck_names`; no MCP operation requires deck IDs |
+| `get_media_dir_path` | Removed; server filesystem paths are not exposed to MCP clients |
+| `get_api_version` | Removed; the AnkiConnect protocol version is not an MCP concern |
+
+Their corresponding AnkiConnect HTTP actions remain supported.
 
 For a local MCP host, point the configuration at this source checkout:
 
