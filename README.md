@@ -2,18 +2,25 @@
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
-A headless server that exposes a useful subset of the AnkiConnect version 6 protocol, an
-MCP server for AI assistants, and on-demand AnkiWeb synchronization. It accesses an Anki
-collection directly, so the desktop application does not need to be running.
+This is a substantially diverged fork of
+[`glechic/anki-connect-server`](https://github.com/glechic/anki-connect-server). The upstream
+project established the headless, direct-collection foundation. This fork retains that foundation
+but is independently developed as an agent-first Anki service with a curated MCP interface, safe
+on-demand synchronization, and containerized remote deployment. It does not require the Anki
+desktop application or Qt.
 
-## Features
+## What this fork provides
 
-- AnkiConnect-compatible JSON API at `POST /`
-- MCP tools for decks, models, notes, cards, interactive review, media, packages, and sync
-- Outbound-only OpenAI Secure MCP Tunnel support for the stdio MCP server
-- Direct headless access to an Anki collection without Qt
-- On-demand collection and media synchronization with AnkiWeb
-- Local Docker image and persistent data-directory support
+- A curated, strictly typed MCP tool surface designed for AI agents rather than a one-to-one REST
+  mirror
+- Scheduler-backed interactive deck review with session-safe ratings and image/audio card content
+- Bounded note search and sparse card inspection to avoid wasting model context
+- One foreground MCP `sync` operation for collection and media, with progress reporting and a
+  download-first full-sync policy that never replaces AnkiWeb
+- Outbound-only OpenAI Secure MCP Tunnel support for remote ChatGPT access
+- Local Docker and Compose deployment with persistent collection and media storage
+- A supported subset of the AnkiConnect version 6 JSON API at `POST /`
+- Current Anki APIs, strict Pyright typing, Ruff formatting, and tested Python 3.12/3.14 support
 
 This project implements the actions listed below; it does not claim complete parity with every
 action provided by the AnkiConnect desktop add-on.
