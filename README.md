@@ -2,6 +2,10 @@
 
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 
+> This project is a headless MCP service intended to run on a server. If you want a local MCP
+> server that runs inside Anki as an add-on, use
+> [`friedrich-de/mcp-ankiconnect-chatgpt`](https://github.com/friedrich-de/mcp-ankiconnect-chatgpt).
+
 This is a substantially diverged fork of
 [`glechic/anki-connect-server`](https://github.com/glechic/anki-connect-server). The upstream
 project established the headless, direct-collection foundation. This fork retains that foundation
