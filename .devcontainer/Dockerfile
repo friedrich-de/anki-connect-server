@@ -1,7 +1,7 @@
 FROM mcr.microsoft.com/devcontainers/python:1-3.12-bookworm
 
 # Pin uv while keeping the project-managed Ruff version from uv.lock.
-COPY --from=ghcr.io/astral-sh/uv:0.11.28 /uv /uvx /usr/local/bin/
+COPY --from=ghcr.io/astral-sh/uv:0.11.32 /uv /uvx /usr/local/bin/
 
 ARG TARGETARCH
 COPY scripts/install_tunnel_client.py /tmp/install_tunnel_client.py

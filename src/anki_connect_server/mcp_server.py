@@ -5,8 +5,9 @@ from dataclasses import dataclass
 from typing import Annotated, Literal
 
 from fastmcp import Context, FastMCP
+from fastmcp.server.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools import ToolResult
-from mcp.types import TextContent
+from mcp.types import CallToolRequestParams, TextContent
 from pydantic import BaseModel, ConfigDict, Field
 
 from anki_connect_server.anki_wrapper import AnkiWrapper, WrapperFactory, create_anki_wrapper
@@ -52,6 +53,11 @@ class McpState:
 type AnkiMcpServer = FastMCP[dict[str, McpState]]
 
 _STATE_CONTEXT_KEY = "anki_state"
+# Reviews are scoped to the collection, not to an MCP session. Clients on the
+# 2026-07-28 protocol get a new session ID on every request, and the ChatGPT
+# tunnel already carries every conversation over one session, so a per-session
+# scope would either break reviews or add nothing. One server serves one user.
+_REVIEW_SCOPE = "collection"
 
 
 class UpdateNoteFieldsResult(BaseModel):
@@ -251,7 +257,7 @@ def get_review_queue(deck: str, context: Context) -> QueueCounts:
 
 def get_next_review_card(deck: str, context: Context) -> ToolResult:
     """Get one queued card for an interactive review without changing its schedule."""
-    return _get_state(context).reviews.get_next_card(context.session_id, deck)
+    return _get_state(context).reviews.get_next_card(_REVIEW_SCOPE, deck)
 
 
 def submit_review(
@@ -260,7 +266,7 @@ def submit_review(
     context: Context,
 ) -> SubmitReviewResult:
     """Immediately apply one queued review rating to the local Anki collection."""
-    return _get_state(context).reviews.submit(context.session_id, review_id, rating)
+    return _get_state(context).reviews.submit(_REVIEW_SCOPE, review_id, rating)
 
 
 def store_media_file(filename: str, data: str, context: Context) -> bool:
@@ -296,9 +302,34 @@ def export_package(
     return True
 
 
-async def sync(context: Context) -> ToolResult:
-    """Synchronize collection data and media with AnkiWeb and wait for completion."""
-    return _structured_result(await _get_state(context).syncs.run(context))
+async def sync(context: Context, discard_local_changes: bool = False) -> ToolResult:
+    """Synchronize collection data and media with AnkiWeb and wait for completion.
+
+    Set discard_local_changes only after the user agrees that a full download may
+    drop this server's changes that are not on AnkiWeb yet.
+    """
+    return _structured_result(
+        await _get_state(context).syncs.run(context, discard_local_changes=discard_local_changes)
+    )
+
+
+class CollectionGateMiddleware(Middleware):
+    """Run each tool call while holding the collection gate.
+
+    The HTTP API and automatic sync share the gate, so a tool never runs while
+    another request uses the collection or a sync reopens it.
+    """
+
+    async def on_call_tool(
+        self,
+        context: MiddlewareContext[CallToolRequestParams],
+        call_next: CallNext[CallToolRequestParams, ToolResult],
+    ) -> ToolResult:
+        fastmcp_context = context.fastmcp_context
+        if fastmcp_context is None:
+            return await call_next(context)
+        async with _get_wrapper(fastmcp_context).gate.hold():
+            return await call_next(context)
 
 
 def _register_tools(server: AnkiMcpServer) -> None:
@@ -350,7 +381,11 @@ def _register_tools(server: AnkiMcpServer) -> None:
     )
 
 
-def create_mcp_server(wrapper_factory: WrapperFactory = create_anki_wrapper) -> AnkiMcpServer:
+def create_mcp_server(
+    wrapper_factory: WrapperFactory = create_anki_wrapper,
+    *,
+    close_wrapper: bool = True,
+) -> AnkiMcpServer:
     @asynccontextmanager
     async def lifespan(_server: AnkiMcpServer) -> AsyncGenerator[dict[str, McpState]]:
         anki_wrapper = wrapper_factory()
@@ -362,12 +397,14 @@ def create_mcp_server(wrapper_factory: WrapperFactory = create_anki_wrapper) -> 
         try:
             yield {_STATE_CONTEXT_KEY: state}
         finally:
-            anki_wrapper.close()
+            if close_wrapper:
+                anki_wrapper.close()
 
     server = FastMCP(
         name="Anki Connect MCP Server",
         instructions=SERVER_INSTRUCTIONS,
         lifespan=lifespan,
+        middleware=[CollectionGateMiddleware()],
     )
     _register_tools(server)
     return server

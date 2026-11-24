@@ -1,6 +1,6 @@
 import json
 from collections.abc import Callable
-from typing import cast
+from typing import Literal, cast
 from unittest.mock import patch
 
 import pytest
@@ -74,24 +74,24 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
     assert len(tools) == 30
     assert REMOVED_MCP_TOOLS.isdisjoint(tools)
     for tool in tools.values():
-        tool_schema = cast(JsonObject, tool.inputSchema)
+        tool_schema = cast(JsonObject, tool.input_schema)
         tool_properties = tool_schema["properties"]
         assert isinstance(tool_properties, dict)
         assert "context" not in tool_properties
 
-    schema = cast(JsonObject, tools["create_deck"].inputSchema)
+    schema = cast(JsonObject, tools["create_deck"].input_schema)
     properties = schema["properties"]
     assert isinstance(properties, dict)
     assert set(properties) == {"deck"}
 
-    review_schema = cast(JsonObject, tools["submit_review"].inputSchema)
+    review_schema = cast(JsonObject, tools["submit_review"].input_schema)
     review_properties = review_schema["properties"]
     assert isinstance(review_properties, dict)
     rating = review_properties["rating"]
     assert isinstance(rating, dict)
     assert rating["enum"] == ["again", "hard", "good", "easy"]
 
-    search_schema = cast(JsonObject, tools["search_notes"].inputSchema)
+    search_schema = cast(JsonObject, tools["search_notes"].input_schema)
     search_properties = search_schema["properties"]
     assert isinstance(search_properties, dict)
     content = search_properties["content"]
@@ -104,7 +104,7 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
         "type": "integer",
     }
 
-    update_schema = cast(JsonObject, tools["update_note_fields"].inputSchema)
+    update_schema = cast(JsonObject, tools["update_note_fields"].input_schema)
     update_properties = update_schema["properties"]
     assert isinstance(update_properties, dict)
     assert set(update_properties) == {"note_id", "fields"}
@@ -113,7 +113,7 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
     assert isinstance(fields, dict)
     assert fields["minProperties"] == 1
 
-    update_output = cast(JsonObject, tools["update_note_fields"].outputSchema)
+    update_output = cast(JsonObject, tools["update_note_fields"].output_schema)
     output_properties = update_output["properties"]
     assert isinstance(output_properties, dict)
     assert set(output_properties) == {
@@ -123,7 +123,7 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
         "affected_card_ids",
     }
 
-    inspect_schema = cast(JsonObject, tools["inspect_cards"].inputSchema)
+    inspect_schema = cast(JsonObject, tools["inspect_cards"].input_schema)
     inspect_properties = inspect_schema["properties"]
     assert isinstance(inspect_properties, dict)
     property_selection = inspect_properties["properties"]
@@ -144,7 +144,7 @@ async def test_expected_tools_and_schemas_are_registered(anki_wrapper: AnkiWrapp
         "all",
     ]
 
-    sync_schema = cast(JsonObject, tools["sync"].outputSchema)
+    sync_schema = cast(JsonObject, tools["sync"].output_schema)
     sync_properties = sync_schema["properties"]
     assert isinstance(sync_properties, dict)
     assert set(sync_properties) == {"status", "collection", "media", "server_message"}
@@ -258,8 +258,10 @@ async def test_update_note_fields_returns_structured_result_without_syncing(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["auto", "legacy"])
 async def test_interactive_review_tools_share_session_and_retry_safely(
     anki_wrapper: AnkiWrapper,
+    mode: Literal["auto", "legacy"],
 ) -> None:
     anki_wrapper.col.media.write_data("picture.png", b"\x89PNG")
     anki_wrapper.col.media.write_data("voice.mp3", b"ID3")
@@ -275,7 +277,9 @@ async def test_interactive_review_tools_share_session_and_retry_safely(
     )
     assert note_id is not None
 
-    async with Client(create_mcp_server(lambda: anki_wrapper)) as client:
+    # "auto" negotiates the stateless 2026-07-28 protocol, where every request
+    # is its own connection; "legacy" is the initialize handshake.
+    async with Client(create_mcp_server(lambda: anki_wrapper), mode=mode) as client:
         queue = await client.call_tool("get_review_queue", {"deck": "Default"})
         first = await client.call_tool("get_next_review_card", {"deck": "Default"})
         second = await client.call_tool("get_next_review_card", {"deck": "Default"})
@@ -315,7 +319,12 @@ async def test_sync_is_one_foreground_tool_with_progress_and_structured_result(
         media=MediaSyncResult(checked="4", added="1", removed="0"),
     )
 
-    def run_sync(*, progress: Callable[[str], None] | None = None) -> SyncResult:
+    def run_sync(
+        *,
+        discard_local_changes: bool = False,
+        progress: Callable[[str], None] | None = None,
+    ) -> SyncResult:
+        assert not discard_local_changes
         assert progress is not None
         progress("Authenticating with AnkiWeb")
         progress("Synchronizing collection")

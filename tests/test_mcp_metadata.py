@@ -63,10 +63,10 @@ async def test_every_exposed_tool_has_explicit_annotations(
         assert all(
             getattr(annotations, hint) is not None
             for hint in (
-                "readOnlyHint",
-                "destructiveHint",
-                "idempotentHint",
-                "openWorldHint",
+                "read_only_hint",
+                "destructive_hint",
+                "idempotent_hint",
+                "open_world_hint",
             )
         )
 
@@ -74,55 +74,55 @@ async def test_every_exposed_tool_has_explicit_annotations(
 def test_annotation_profiles_are_explicit() -> None:
     assert (
         ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=True,
-            idempotentHint=False,
-            openWorldHint=False,
+            read_only_hint=False,
+            destructive_hint=True,
+            idempotent_hint=False,
+            open_world_hint=False,
         )
         == DESTRUCTIVE_WRITE
     )
     assert (
         ToolAnnotations(
-            readOnlyHint=True,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
         )
         == READ_ONLY
     )
     assert (
         ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=False,
-            openWorldHint=False,
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=False,
+            open_world_hint=False,
         )
         == ADDITIVE_WRITE
     )
     assert (
         ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=False,
-            idempotentHint=True,
-            openWorldHint=False,
+            read_only_hint=False,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
         )
         == IDEMPOTENT_WRITE
     )
     assert (
         ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=True,
-            idempotentHint=True,
-            openWorldHint=False,
+            read_only_hint=False,
+            destructive_hint=True,
+            idempotent_hint=True,
+            open_world_hint=False,
         )
         == DESTRUCTIVE_IDEMPOTENT_WRITE
     )
     assert (
         ToolAnnotations(
-            readOnlyHint=False,
-            destructiveHint=True,
-            idempotentHint=False,
-            openWorldHint=True,
+            read_only_hint=False,
+            destructive_hint=True,
+            idempotent_hint=False,
+            open_world_hint=True,
         )
         == DESTRUCTIVE_OPEN_WORLD_WRITE
     )
@@ -134,10 +134,9 @@ async def test_server_instructions_are_exposed_during_initialization(
 ) -> None:
     server = create_mcp_server(lambda: anki_wrapper)
     async with Client(server) as client:
-        initialize_result = client.initialize_result
+        instructions = client.instructions
 
-    assert initialize_result is not None
-    assert initialize_result.instructions == SERVER_INSTRUCTIONS
+    assert instructions == SERVER_INSTRUCTIONS
     for phrase in (
         "get_next_review_card",
         "ask exactly its one question",
@@ -159,7 +158,8 @@ async def test_server_instructions_are_exposed_during_initialization(
         "Store new binary media",
         "sync tool synchronizes collection data and media",
         "wait for its final result",
-        "Full conflicts always download",
+        "never uploads a full collection",
+        "discard_local_changes only after the user agrees",
         "state-changing operations",
     ):
         assert phrase in SERVER_INSTRUCTIONS

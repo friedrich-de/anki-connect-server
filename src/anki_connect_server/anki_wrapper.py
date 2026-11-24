@@ -8,27 +8,30 @@ from pathlib import Path
 from typing import Literal, cast
 
 import anki.collection
-from anki.cards import CardId
+from anki.cards import Card, CardId
 from anki.collection import (
     DeckIdLimit,
     ExportAnkiPackageOptions,
     ImportAnkiPackageRequest,
 )
 from anki.consts import MODEL_CLOZE
+from anki.dbproxy import DBProxy
 from anki.decks import DeckConfigDict, DeckConfigId, DeckId
 from anki.errors import NotFoundError
-from anki.models import FieldDict, NotetypeDict, TemplateDict
+from anki.models import FieldDict, NotetypeDict, NotetypeId, TemplateDict
 from anki.notes import Note, NoteId
 from anki.sync import SyncAuth
 from anki.sync_pb2 import MediaSyncStatusResponse, SyncCollectionResponse
 from google.protobuf.json_format import MessageToDict
 
 from anki_connect_server.config import Config, get_config
+from anki_connect_server.gate import CollectionGate
 from anki_connect_server.sync import (
     CollectionSyncOutcome,
     CollectionSyncResult,
     DownloadReason,
     MediaSyncResult,
+    SyncConflictError,
     SyncError,
     SyncResult,
 )
@@ -58,6 +61,7 @@ class AnkiWrapper:
         self._closed = False
         self._collection_generation = 0
         self._sync_lock = threading.Lock()
+        self.gate = CollectionGate(self.settings.busy_timeout)
 
     @property
     def collection_generation(self) -> int:
@@ -138,14 +142,53 @@ class AnkiWrapper:
     def _phase_error(phase: str, error: Exception) -> SyncError:
         return SyncError(f"{phase} failed: {error}")
 
+    def db(self) -> DBProxy:
+        database = self.col.db
+        if database is None:
+            raise RuntimeError("The collection is closed")
+        return database
+
+    def sync_stamps(self) -> tuple[int, int, int]:
+        """Return the collection row's (mod, ls, usn) sync stamps."""
+        row = self.db().first("select mod, ls, usn from col")
+        if not row:
+            return (0, 0, 0)
+        return (int(row[0]), int(row[1]), int(row[2]))
+
+    def has_unsynced_changes(self) -> bool:
+        """Whether the collection changed after its last completed sync.
+
+        Anki itself compares the collection's modification time with its last sync
+        time to decide whether local changes exist.
+        """
+        mod, last_sync, _usn = self.sync_stamps()
+        return mod > last_sync
+
+    def _refresh_after_merge(self) -> None:
+        """Drop Python-side caches after a normal sync changed the collection.
+
+        A normal sync runs inside the backend and can change note types and
+        scheduler settings; Anki Desktop reloads the scheduler and keeps the
+        collection open, so open review sessions stay valid.
+        """
+        self.col._clear_caches()  # pyright: ignore[reportPrivateUsage]
+        self.col._load_scheduler()  # pyright: ignore[reportPrivateUsage]
+
     def sync_to_ankiweb(
         self,
         username: str | None = None,
         password: str | None = None,
         endpoint: str | None = None,
         *,
+        discard_local_changes: bool = False,
         progress: SyncProgressCallback | None = None,
     ) -> SyncResult:
+        """Synchronize the collection and media with AnkiWeb and wait for both.
+
+        A full sync never uploads. When AnkiWeb asks for a full sync, the AnkiWeb
+        collection is downloaded only if that loses nothing: the server has no
+        changes since its last sync, or the caller explicitly discards them.
+        """
         if not self._sync_lock.acquire(blocking=False):
             raise SyncError("A synchronization is already in progress")
         try:
@@ -161,6 +204,8 @@ class AnkiWrapper:
             except Exception as error:
                 raise self._phase_error("AnkiWeb authentication", error) from error
 
+            stamps_before = self.sync_stamps()
+            had_local_changes = stamps_before[0] > stamps_before[1]
             self._report(progress, "Synchronizing collection")
             try:
                 result = self.col.sync_collection(auth, sync_media=True)
@@ -172,7 +217,7 @@ class AnkiWrapper:
             if result.new_endpoint:
                 auth.endpoint = result.new_endpoint
 
-            needs_reopen = False
+            merged = False
             if result.required in (
                 SyncCollectionResponse.FULL_SYNC,
                 SyncCollectionResponse.FULL_DOWNLOAD,
@@ -182,6 +227,18 @@ class AnkiWrapper:
                     if result.required == SyncCollectionResponse.FULL_SYNC
                     else DownloadReason.REMOTE_ONLY
                 )
+                if (
+                    reason is DownloadReason.CONFLICT
+                    and had_local_changes
+                    and not discard_local_changes
+                ):
+                    raise SyncConflictError(
+                        "AnkiWeb requires a full sync, and this server has changes that are "
+                        "not on AnkiWeb yet. Nothing was replaced. Downloading AnkiWeb's "
+                        "collection would drop the server's changes since its last sync; "
+                        "repeat the sync with discard_local_changes (MCP) or "
+                        '"discardLocalChanges": true (HTTP) to do that.'
+                    )
                 self._report(
                     progress,
                     "Downloading the AnkiWeb collection to resolve a conflict"
@@ -202,21 +259,25 @@ class AnkiWrapper:
                     "AnkiWeb collection is empty and only a full upload is possible; "
                     "full uploads are disabled by policy and the local collection was preserved"
                 )
-            elif result.required == SyncCollectionResponse.NORMAL_SYNC:
+            elif result.required in (
+                SyncCollectionResponse.NORMAL_SYNC,
+                SyncCollectionResponse.NO_CHANGES,
+            ):
+                # `required` describes the state after the sync, so a completed merge
+                # also reports NO_CHANGES. A merge always rewrites the sync stamps,
+                # while a sync with nothing to transfer leaves them untouched.
+                merged = self.sync_stamps() != stamps_before
                 collection = CollectionSyncResult(
-                    outcome=CollectionSyncOutcome.MERGED,
+                    outcome=CollectionSyncOutcome.MERGED
+                    if merged
+                    else CollectionSyncOutcome.NO_CHANGES,
                     local_data_replaced=False,
                 )
-                needs_reopen = True
-            elif result.required == SyncCollectionResponse.NO_CHANGES:
-                collection = CollectionSyncResult(
-                    outcome=CollectionSyncOutcome.NO_CHANGES,
-                    local_data_replaced=False,
-                )
-                needs_reopen = True
             else:
                 raise SyncError(f"Unsupported synchronization requirement: {result.required}")
 
+            if merged:
+                self._refresh_after_merge()
             try:
                 media = self._wait_for_media(progress)
             except Exception as error:
@@ -224,10 +285,6 @@ class AnkiWrapper:
                     "Media synchronization failed after collection synchronization completed; "
                     f"media remains incomplete: {error}"
                 ) from error
-            finally:
-                if needs_reopen:
-                    self.close()
-                    self._reopen_collection()
 
             self._report(progress, "Synchronization completed")
             logger.info(
@@ -240,6 +297,9 @@ class AnkiWrapper:
                 media=media,
                 server_message=result.server_message or None,
             )
+        except SyncConflictError:
+            logger.warning("AnkiWeb sync stopped to protect local changes")
+            raise
         except Exception:
             logger.exception("AnkiWeb sync failed")
             if self._closed:
@@ -261,6 +321,12 @@ class AnkiWrapper:
 
     def deck_names_and_ids(self) -> dict[str, int]:
         return {deck.name: int(deck.id) for deck in self.col.decks.all_names_and_ids()}
+
+    def deck_name_from_id(self, deck_id: int) -> str:
+        deck = self.col.decks.get(DeckId(deck_id), default=False)
+        if deck is None:
+            raise ValueError(f"deck was not found: {deck_id}")
+        return cast(str, deck["name"])
 
     def create_deck(self, deck: str) -> int:
         deck_id = self.col.decks.id(deck)
@@ -336,6 +402,12 @@ class AnkiWrapper:
 
     def model_names_and_ids(self) -> dict[str, int]:
         return {model.name: int(model.id) for model in self.col.models.all_names_and_ids()}
+
+    def model_name_from_id(self, model_id: int) -> str:
+        model = self.col.models.get(NotetypeId(model_id))
+        if model is None:
+            raise ValueError(f"model was not found: {model_id}")
+        return cast(str, model["name"])
 
     def _get_model_by_name(self, model_name: str) -> NotetypeDict | None:
         return self.col.models.by_name(model_name)
@@ -535,33 +607,64 @@ class AnkiWrapper:
                 note_ids.append(note_id)
         return note_ids
 
-    def cards_info(self, cards: list[int]) -> list[JsonObject]:
+    def _card_record(self, card: Card, properties: set[str] | None) -> JsonObject:
+        def wanted(name: str) -> bool:
+            return properties is None or name in properties
+
+        note = card.note()
+        model = self.col.models.get(note.mid)
+        record: JsonObject = {}
+        if wanted("cardId"):
+            record["cardId"] = int(card.id)
+        if wanted("fields"):
+            record["fields"] = {
+                name: {"value": value, "order": index}
+                for index, (name, value) in enumerate(note.items())
+            }
+        if wanted("fieldOrder"):
+            record["fieldOrder"] = card.ord
+        if wanted("question"):
+            record["question"] = card.question(reload=True)
+        if wanted("answer"):
+            record["answer"] = card.answer()
+        if wanted("modelName"):
+            record["modelName"] = cast(str, model.get("name", "")) if model is not None else ""
+        if wanted("ord"):
+            record["ord"] = card.ord
+        if wanted("deckName"):
+            record["deckName"] = self.col.decks.name(card.did)
+        if wanted("css"):
+            record["css"] = cast(str, model.get("css", "")) if model is not None else ""
+        scalar_values: dict[str, JsonValue] = {
+            "factor": card.factor,
+            "interval": card.ivl,
+            "note": int(note.id),
+            "type": int(card.type),
+            "queue": int(card.queue),
+            "due": card.due,
+            "reps": card.reps,
+            "lapses": card.lapses,
+            "left": card.left,
+            "mod": card.mod,
+            "flags": card.flags,
+            # Kept for older clients of this server; AnkiConnect calls it "factor".
+            "ease": card.factor,
+        }
+        for name, value in scalar_values.items():
+            if wanted(name):
+                record[name] = value
+        return record
+
+    def cards_info(self, cards: list[int], properties: set[str] | None = None) -> list[JsonObject]:
+        """Return AnkiConnect card records in input order; a missing card is {}."""
         result: list[JsonObject] = []
         for card_id in cards:
             try:
                 card = self.col.get_card(CardId(card_id))
             except NotFoundError:
+                result.append({})
                 continue
-            note = card.note()
-            model = self.col.models.get(note.mid)
-            model_name = cast(str, model.get("name", "")) if model is not None else ""
-            fields: JsonObject = {
-                name: {"value": value, "order": index}
-                for index, (name, value) in enumerate(note.items())
-            }
-            result.append(
-                {
-                    "cardId": int(card.id),
-                    "note": int(note.id),
-                    "deckName": self.col.decks.name(card.did),
-                    "modelName": model_name,
-                    "fields": fields,
-                    "interval": card.ivl,
-                    "ease": card.factor,
-                    "question": card.question(reload=True),
-                    "answer": card.answer(),
-                }
-            )
+            result.append(self._card_record(card, properties))
         return result
 
     def answer_cards(self, answers: list[CardAnswerInput]) -> list[bool]:
@@ -587,8 +690,14 @@ class AnkiWrapper:
         self.col.sched.unsuspend_cards([CardId(card_id) for card_id in cards])
         return True
 
-    def are_suspended(self, cards: list[int]) -> list[bool]:
-        return [self.col.get_card(CardId(card_id)).queue == -1 for card_id in cards]
+    def are_suspended(self, cards: list[int]) -> list[bool | None]:
+        result: list[bool | None] = []
+        for card_id in cards:
+            try:
+                result.append(self.col.get_card(CardId(card_id)).queue == -1)
+            except NotFoundError:
+                result.append(None)
+        return result
 
     def are_due(self, cards: list[int]) -> list[bool]:
         result: list[bool] = []
@@ -630,6 +739,24 @@ class AnkiWrapper:
     def get_media_dir_path(self) -> str:
         return self.col.media.dir()
 
+    def media_dir(self) -> Path:
+        return Path(self.col.media.dir())
+
+    def package_path(self, path: str) -> Path:
+        """Resolve a package path, which must stay inside the collection's folder.
+
+        The HTTP API can be reachable from other machines, so it must not read or
+        write arbitrary server files.
+        """
+        root = self.collection_path.resolve().parent
+        candidate = Path(path)
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(f"package paths must be inside {root}")
+        return resolved
+
     def media_path(self, filename: str) -> Path:
         """Return a safe path inside the collection media directory."""
         if not filename or Path(filename).name != filename:
@@ -658,7 +785,7 @@ class AnkiWrapper:
             self.col.media.trash_files([filename])
 
     def import_package(self, path: str) -> JsonObject:
-        request = ImportAnkiPackageRequest(package_path=path)
+        request = ImportAnkiPackageRequest(package_path=str(self.package_path(path)))
         response = self.col.import_anki_package(request)
         return cast(JsonObject, MessageToDict(response))
 
@@ -673,7 +800,7 @@ class AnkiWrapper:
             legacy=False,
         )
         self.col.export_anki_package(
-            out_path=path,
+            out_path=str(self.package_path(path)),
             options=options,
             limit=DeckIdLimit(DeckId(deck_id)),
         )

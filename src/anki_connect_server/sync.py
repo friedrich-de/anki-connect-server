@@ -53,6 +53,10 @@ class SyncError(RuntimeError):
     """Raised when a synchronization phase cannot complete safely."""
 
 
+class SyncConflictError(SyncError):
+    """Raised when a full download would drop changes that are not on AnkiWeb yet."""
+
+
 class SyncManager:
     """Run one cancellable foreground sync and relay its progress to MCP."""
 
@@ -60,7 +64,7 @@ class SyncManager:
         self.wrapper = wrapper
         self._lock = asyncio.Lock()
 
-    async def run(self, context: Context) -> SyncResult:
+    async def run(self, context: Context, *, discard_local_changes: bool = False) -> SyncResult:
         if self._lock.locked():
             raise SyncError("A synchronization is already in progress")
 
@@ -72,7 +76,11 @@ class SyncManager:
                 loop.call_soon_threadsafe(events.put_nowait, message)
 
             operation = asyncio.create_task(
-                asyncio.to_thread(self.wrapper.sync_to_ankiweb, progress=progress)
+                asyncio.to_thread(
+                    self.wrapper.sync_to_ankiweb,
+                    discard_local_changes=discard_local_changes,
+                    progress=progress,
+                )
             )
             sequence = 0
             try:
