@@ -8,12 +8,21 @@ from collections.abc import Sequence
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="anki-connect-server",
-        description="Headless AnkiConnect-compatible REST API server with MCP support",
+        description="Headless AnkiConnect-compatible API server with MCP support",
     )
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
 
     subparsers.add_parser("api", help="Run the AnkiConnect API server")
-    subparsers.add_parser("mcp", help="Run the MCP server")
+    serve_parser = subparsers.add_parser(
+        "serve",
+        help="Run the AnkiConnect API and a loopback MCP endpoint on one collection",
+    )
+    serve_parser.add_argument(
+        "--tunnel",
+        action="store_true",
+        help="Also run OpenAI's tunnel-client against the loopback MCP endpoint",
+    )
+    subparsers.add_parser("mcp", help="Run the MCP server over stdio")
     tunnel_parser = subparsers.add_parser(
         "tunnel",
         help="Connect the MCP server through OpenAI Secure MCP Tunnel",
@@ -32,9 +41,19 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     if args.command == "api":
+        import logging
+
         from anki_connect_server.api import run_server
 
+        logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
         run_server()
+    elif args.command == "serve":
+        from anki_connect_server.serve import run_serve
+
+        try:
+            run_serve(tunnel=bool(args.tunnel))
+        except (OSError, RuntimeError, ValueError) as exc:
+            parser.exit(1, f"{parser.prog}: error: {exc}\n")
     elif args.command == "mcp":
         from anki_connect_server.mcp_server import run
 

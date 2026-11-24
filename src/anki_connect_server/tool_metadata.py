@@ -9,9 +9,12 @@ SERVER_INSTRUCTIONS = (
     "missing, or materially wrong means again; correct or semantically equivalent means good. "
     "Use hard or easy only when the user explicitly requests or supplies that rating. Report any "
     "submission failure before fetching the next card, then repeat one card at a time. The user's "
-    "review request authorizes each inferred rating. Ratings remain local until sync is called. "
+    "review request authorizes each inferred rating. Ratings stay in this collection until it is "
+    "synchronized; the server may also synchronize by itself. "
     "The sync tool synchronizes collection data and media; wait for its final result before "
-    "claiming synchronization completed. Full conflicts always download from AnkiWeb. "
+    "claiming synchronization completed. It never uploads a full collection. When AnkiWeb "
+    "requires a full sync and the server has unsynced changes, sync stops without replacing "
+    "anything; call it with discard_local_changes only after the user agrees to drop them. "
     "Use these tools to inspect and modify the user's Anki collection. Before adding a note, "
     "identify the target deck, note type, and required fields with get_deck_names, "
     "get_model_names, and get_model_field_names. Before changing or deleting existing data, "
@@ -19,7 +22,8 @@ SERVER_INSTRUCTIONS = (
     "or cleaned fields. Use find_cards only for card-specific Anki queries that note search "
     "cannot express. To edit card content, inspect its current fields and note ID, then call "
     "update_note_fields with only the fields the user requested; note edits affect all sibling "
-    "cards, preserve supplied text and HTML verbatim, and remain local until sync. Store new "
+    "cards, preserve supplied text and HTML verbatim, and stay in this collection until it is "
+    "synchronized. Store new "
     "binary media before referencing its filename in a field. Only perform state-changing "
     "operations when the user has requested them, and report returned IDs and failures. Import, "
     "export, and AnkiWeb sync tools interact with resources outside the collection; verify their "
@@ -27,43 +31,43 @@ SERVER_INSTRUCTIONS = (
 )
 
 READ_ONLY = ToolAnnotations(
-    readOnlyHint=True,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=True,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 ADDITIVE_WRITE = ToolAnnotations(
-    readOnlyHint=False,
-    destructiveHint=False,
-    idempotentHint=False,
-    openWorldHint=False,
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=False,
+    open_world_hint=False,
 )
 
 IDEMPOTENT_WRITE = ToolAnnotations(
-    readOnlyHint=False,
-    destructiveHint=False,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=False,
+    destructive_hint=False,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 DESTRUCTIVE_WRITE = ToolAnnotations(
-    readOnlyHint=False,
-    destructiveHint=True,
-    idempotentHint=False,
-    openWorldHint=False,
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=False,
+    open_world_hint=False,
 )
 
 DESTRUCTIVE_IDEMPOTENT_WRITE = ToolAnnotations(
-    readOnlyHint=False,
-    destructiveHint=True,
-    idempotentHint=True,
-    openWorldHint=False,
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=True,
+    open_world_hint=False,
 )
 
 DESTRUCTIVE_OPEN_WORLD_WRITE = ToolAnnotations(
-    readOnlyHint=False,
-    destructiveHint=True,
-    idempotentHint=False,
-    openWorldHint=True,
+    read_only_hint=False,
+    destructive_hint=True,
+    idempotent_hint=False,
+    open_world_hint=True,
 )

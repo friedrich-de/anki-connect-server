@@ -50,7 +50,7 @@ async def test_sync_compatibility_actions_remain_available(anki_wrapper: AnkiWra
         }
         assert await dispatch("syncMedia", {}, anki_wrapper) == "media sync completed"
 
-    sync.assert_called_once_with(None, None, None)
+    sync.assert_called_once_with(None, None, None, discard_local_changes=False)
     status.assert_called_once_with(None, None, None)
     media.assert_called_once_with(None, None, None)
 
@@ -150,10 +150,10 @@ async def test_multi_preserves_results_and_unknown_action_errors(
         anki_wrapper,
     )
 
-    assert result == [6, {"error": "Unknown action: missing"}]
+    assert result == [6, {"result": None, "error": "unsupported action"}]
 
 
 @pytest.mark.asyncio
 async def test_unknown_action_is_rejected(anki_wrapper: AnkiWrapper) -> None:
-    with pytest.raises(ValueError, match="Unsupported action"):
+    with pytest.raises(ValueError, match="unsupported action"):
         await dispatch("missing", {}, anki_wrapper)

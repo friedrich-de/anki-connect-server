@@ -49,13 +49,14 @@ async def test_health_endpoint(anki_wrapper: AnkiWrapper) -> None:
         response = await client.get("/health")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "healthy"}
+    assert response.json() == {"status": "healthy", "autoSync": "off"}
 
 
 @pytest.mark.asyncio
 async def test_api_runs_representative_action(anki_wrapper: AnkiWrapper) -> None:
     request = {
         "action": "addNote",
+        "version": 6,
         "params": {
             "note": {
                 "deckName": "Default",
@@ -100,7 +101,9 @@ async def test_removed_mcp_tools_remain_available_as_ankiconnect_actions(
     async with _app_client(anki_wrapper) as client:
         results: list[JsonValue] = []
         for action, params in requests:
-            response = await client.post("/", json={"action": action, "params": params})
+            response = await client.post(
+                "/", json={"action": action, "version": 6, "params": params}
+            )
             payload = cast(JsonObject, response.json())
             assert response.status_code == 200
             assert payload["error"] is None
@@ -135,6 +138,7 @@ async def test_answer_cards_validates_before_mutation_and_preserves_order(
             "/",
             json={
                 "action": "answerCards",
+                "version": 6,
                 "params": {
                     "answers": [
                         {"cardId": card_id, "ease": 3},
@@ -148,6 +152,7 @@ async def test_answer_cards_validates_before_mutation_and_preserves_order(
             "/",
             json={
                 "action": "answerCards",
+                "version": 6,
                 "params": {
                     "answers": [
                         {"cardId": card_id, "ease": 3},
@@ -174,11 +179,11 @@ async def test_unknown_action_uses_ankiconnect_error_envelope(
     data = cast(JsonObject, response.json())
     assert response.status_code == 200
     assert data["result"] is None
-    assert data["error"] == "Unsupported action: unknown"
+    assert data["error"] == "unsupported action"
 
 
 @pytest.mark.asyncio
-async def test_invalid_json_is_rejected(anki_wrapper: AnkiWrapper) -> None:
+async def test_invalid_json_returns_an_error_envelope(anki_wrapper: AnkiWrapper) -> None:
     async with _app_client(anki_wrapper) as client:
         response = await client.post(
             "/",
@@ -186,7 +191,8 @@ async def test_invalid_json_is_rejected(anki_wrapper: AnkiWrapper) -> None:
             headers={"Content-Type": "application/json"},
         )
 
-    assert response.status_code == 422
+    assert response.status_code == 200
+    assert response.json() == {"result": None, "error": "request body must be JSON"}
 
 
 @pytest.mark.asyncio

@@ -7,11 +7,16 @@ services:
       - .env
     environment:
       ANKICONNECT_COLLECTION_PATH: /data/collection.anki2
-      # Container-wide listening is required for loopback-only host forwarding below.
+      # Listen on every container interface; the host ports below stay on loopback.
+      ANKICONNECT_BIND: 0.0.0.0
+      ANKICONNECT_PORT: "8765"
       HEALTH_LISTEN_ADDR: 0.0.0.0:8080
       ALLOW_REMOTE_UI: "true"
-    command: ["anki-connect-server", "tunnel"]
+    # One process owns the collection: the AnkiConnect API on 8765, automatic sync when
+    # enabled, and OpenAI's tunnel-client for ChatGPT. Drop --tunnel to run without it.
+    command: ["anki-connect-server", "serve", "--tunnel"]
     ports:
+      - "127.0.0.1:8765:8765"
       - "127.0.0.1:8080:8080"
     volumes:
       - ./anki-data:/data:Z
@@ -22,9 +27,9 @@ services:
         - -c
         - >-
           import urllib.request;
-          urllib.request.urlopen('http://127.0.0.1:8080/readyz', timeout=2).read()
+          urllib.request.urlopen('http://127.0.0.1:8765/health', timeout=2).read()
       interval: 10s
       timeout: 3s
       retries: 6
-      start_period: 10s
+      start_period: 20s
     restart: unless-stopped

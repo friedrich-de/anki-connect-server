@@ -6,7 +6,7 @@ import shlex
 import shutil
 from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
-from typing import Never
+from typing import Never, cast
 
 from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -101,12 +101,15 @@ def build_tunnel_environment(
 
 def build_tunnel_command(
     tunnel_client: str,
-    mcp_command: Sequence[str],
+    mcp_command: Sequence[str] | None = None,
     *,
+    mcp_url: str | None = None,
     doctor: bool = False,
 ) -> list[str]:
-    """Build a tunnel-client command for this server's stdio MCP transport."""
-    if not mcp_command:
+    """Build a tunnel-client command for a stdio MCP command or an HTTP MCP URL."""
+    if (mcp_command is None) == (mcp_url is None):
+        raise ValueError("Provide exactly one of an MCP command or an MCP URL")
+    if mcp_command is not None and not mcp_command:
         raise ValueError("MCP command must not be empty")
 
     command = [
@@ -114,12 +117,18 @@ def build_tunnel_command(
         "doctor" if doctor else "run",
         "--control-plane.api-key",
         "env:CONTROL_PLANE_API_KEY",
-        "--mcp-command",
-        shlex.join(mcp_command),
     ]
+    if mcp_command is not None:
+        command.extend(["--mcp-command", shlex.join(mcp_command)])
+    else:
+        command.extend(["--mcp.server-url", cast(str, mcp_url)])
     if doctor:
         command.append("--explain")
     return command
+
+
+def resolve_tunnel_client(settings: TunnelConfig) -> str:
+    return _resolve_executable(settings.client_path, purpose="tunnel-client")
 
 
 def _resolve_executable(command: str, *, purpose: str) -> str:

@@ -191,9 +191,9 @@ class _MediaCollector:
         content_type = mime_type or "application/octet-stream"
         block: ContentBlock
         if kind == "image":
-            block = ImageContent(type="image", data=encoded, mimeType=content_type)
+            block = ImageContent(type="image", data=encoded, mime_type=content_type)
         else:
-            block = AudioContent(type="audio", data=encoded, mimeType=content_type)
+            block = AudioContent(type="audio", data=encoded, mime_type=content_type)
         self.blocks.append(block)
         self.total_bytes += len(data)
         entry.content_index = content_index

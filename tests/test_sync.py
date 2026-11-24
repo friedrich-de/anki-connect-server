@@ -19,6 +19,7 @@ from anki_connect_server.config import Config
 from anki_connect_server.sync import (
     CollectionSyncOutcome,
     DownloadReason,
+    SyncConflictError,
     SyncError,
     SyncManager,
     SyncResult,
@@ -33,6 +34,21 @@ def _sync_wrapper(tmp_path: Path) -> AnkiWrapper:
         ankiweb_url="https://sync.example.com",
     )
     return AnkiWrapper(settings.collection_path, settings=settings)
+
+
+def _mark_synced(wrapper: AnkiWrapper) -> None:
+    """Pretend the collection's current state was synced (no local changes)."""
+    wrapper.db().execute("update col set ls = mod")
+
+
+def _merge_side_effect(wrapper: AnkiWrapper, response: SyncCollectionResponse) -> object:
+    """Mimic a completed normal sync, which rewrites the collection's sync stamps."""
+
+    def merge(*_args: object, **_kwargs: object) -> SyncCollectionResponse:
+        wrapper.db().execute("update col set mod = mod + 1000, ls = mod + 1000, usn = usn + 1")
+        return response
+
+    return merge
 
 
 def _media_status(
@@ -55,12 +71,13 @@ def _media_status(
         (SyncCollectionResponse.FULL_DOWNLOAD, DownloadReason.REMOTE_ONLY),
     ],
 )
-def test_full_sync_always_downloads_and_waits_for_media(
+def test_full_sync_without_local_changes_downloads_and_waits_for_media(
     tmp_path: Path,
     required: SyncCollectionResponse.ChangesRequired.ValueType,
     reason: DownloadReason,
 ) -> None:
     wrapper = _sync_wrapper(tmp_path)
+    _mark_synced(wrapper)
     auth = SyncAuth(hkey="key")
     response = SyncCollectionResponse(
         host_number=7,
@@ -176,15 +193,17 @@ def test_full_download_uses_endpoint_returned_by_collection_sync(tmp_path: Path)
 
 
 @pytest.mark.parametrize(
-    ("required", "outcome"),
+    ("required", "merges", "outcome"),
     [
-        (SyncCollectionResponse.NO_CHANGES, CollectionSyncOutcome.NO_CHANGES),
-        (SyncCollectionResponse.NORMAL_SYNC, CollectionSyncOutcome.MERGED),
+        (SyncCollectionResponse.NO_CHANGES, False, CollectionSyncOutcome.NO_CHANGES),
+        (SyncCollectionResponse.NO_CHANGES, True, CollectionSyncOutcome.MERGED),
+        (SyncCollectionResponse.NORMAL_SYNC, True, CollectionSyncOutcome.MERGED),
     ],
 )
-def test_regular_sync_includes_media_and_reopens_collection(
+def test_regular_sync_reports_truthful_outcome_and_keeps_collection_open(
     tmp_path: Path,
     required: SyncCollectionResponse.ChangesRequired.ValueType,
+    merges: bool,
     outcome: CollectionSyncOutcome,
 ) -> None:
     wrapper = _sync_wrapper(tmp_path)
@@ -194,12 +213,18 @@ def test_regular_sync_includes_media_and_reopens_collection(
     try:
         with (
             patch.object(wrapper.col, "sync_login", return_value=auth),
-            patch.object(wrapper.col, "sync_collection", return_value=response) as collection_sync,
+            patch.object(
+                wrapper.col,
+                "sync_collection",
+                side_effect=_merge_side_effect(wrapper, response) if merges else None,
+                return_value=response,
+            ) as collection_sync,
             patch.object(
                 wrapper.col,
                 "media_sync_status",
                 return_value=_media_status(active=False),
             ) as media_status,
+            patch.object(wrapper.col, "_load_scheduler") as load_scheduler,
         ):
             result = wrapper.sync_to_ankiweb()
 
@@ -207,9 +232,61 @@ def test_regular_sync_includes_media_and_reopens_collection(
         media_status.assert_called_once_with()
         assert result.collection.outcome is outcome
         assert not result.collection.local_data_replaced
-        assert wrapper.col is not original_collection
-        assert wrapper.collection_generation == 1
+        # A normal sync keeps the collection open, so MCP review sessions stay valid.
+        assert wrapper.col is original_collection
+        assert wrapper.collection_generation == 0
+        assert load_scheduler.called is merges
         assert "Default" in wrapper.deck_names()
+    finally:
+        wrapper.close()
+
+
+def test_conflict_with_unsynced_changes_stops_without_replacing(tmp_path: Path) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "mined", "Back": ""}}
+    )
+    assert wrapper.has_unsynced_changes()
+    response = SyncCollectionResponse(required=SyncCollectionResponse.FULL_SYNC)
+    try:
+        with (
+            patch.object(wrapper.col, "sync_login", return_value=SyncAuth(hkey="key")),
+            patch.object(wrapper.col, "sync_collection", return_value=response),
+            patch.object(wrapper.col, "full_upload_or_download") as full_sync,
+            pytest.raises(SyncConflictError, match="Nothing was replaced"),
+        ):
+            wrapper.sync_to_ankiweb()
+
+        full_sync.assert_not_called()
+        assert wrapper.find_notes("mined")
+        assert wrapper.collection_generation == 0
+    finally:
+        wrapper.close()
+
+
+def test_conflict_downloads_when_local_changes_are_explicitly_discarded(tmp_path: Path) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": "mined", "Back": ""}}
+    )
+    auth = SyncAuth(hkey="key")
+    response = SyncCollectionResponse(required=SyncCollectionResponse.FULL_SYNC)
+    try:
+        with (
+            patch.object(wrapper.col, "sync_login", return_value=auth),
+            patch.object(wrapper.col, "sync_collection", return_value=response),
+            patch.object(wrapper.col, "close_for_full_sync"),
+            patch.object(wrapper.col, "full_upload_or_download") as full_sync,
+            patch.object(wrapper.col, "reopen"),
+            patch.object(
+                wrapper.col, "media_sync_status", return_value=_media_status(active=False)
+            ),
+        ):
+            result = wrapper.sync_to_ankiweb(discard_local_changes=True)
+
+        full_sync.assert_called_once_with(auth=auth, server_usn=0, upload=False)
+        assert result.collection.outcome is CollectionSyncOutcome.DOWNLOADED
+        assert result.collection.local_data_replaced
     finally:
         wrapper.close()
 
@@ -232,17 +309,16 @@ def test_media_failure_reports_partial_completion_and_allows_retry(tmp_path: Pat
         ):
             wrapper.sync_to_ankiweb()
 
-        assert wrapper.collection_generation == 1
-        retry_collection = wrapper.col
+        assert wrapper.collection_generation == 0
         with (
-            patch.object(retry_collection, "sync_login", return_value=SyncAuth(hkey="key")),
+            patch.object(wrapper.col, "sync_login", return_value=SyncAuth(hkey="key")),
             patch.object(
-                retry_collection,
+                wrapper.col,
                 "sync_collection",
                 return_value=SyncCollectionResponse(required=SyncCollectionResponse.NO_CHANGES),
             ),
             patch.object(
-                retry_collection,
+                wrapper.col,
                 "media_sync_status",
                 return_value=_media_status(active=False),
             ),
@@ -250,7 +326,7 @@ def test_media_failure_reports_partial_completion_and_allows_retry(tmp_path: Pat
             retried = wrapper.sync_to_ankiweb()
 
         assert retried.status == "completed"
-        assert wrapper.collection_generation == 2
+        assert wrapper.collection_generation == 0
     finally:
         wrapper.close()
 
