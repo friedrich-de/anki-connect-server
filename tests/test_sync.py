@@ -241,6 +241,93 @@ def test_regular_sync_reports_truthful_outcome_and_keeps_collection_open(
         wrapper.close()
 
 
+def _mine(wrapper: AnkiWrapper, front: str) -> None:
+    wrapper.add_note(
+        {"deckName": "Default", "modelName": "Basic", "fields": {"Front": front, "Back": ""}}
+    )
+
+
+def _stamps_seen_by_sync(wrapper: AnkiWrapper, *, fails: bool = False) -> tuple[int, int, int]:
+    """Run a sync whose collection phase records the sync stamps it starts from."""
+    seen: list[tuple[int, int, int]] = []
+    response = SyncCollectionResponse(required=SyncCollectionResponse.NORMAL_SYNC)
+
+    def collection_sync(*_args: object, **_kwargs: object) -> SyncCollectionResponse:
+        seen.append(wrapper.sync_stamps())
+        if fails:
+            raise ConnectionError("network unavailable")
+        return response
+
+    with (
+        patch.object(wrapper.col, "sync_login", return_value=SyncAuth(hkey="key")),
+        patch.object(wrapper.col, "sync_collection", side_effect=collection_sync),
+        patch.object(wrapper.col, "media_sync_status", return_value=_media_status(active=False)),
+    ):
+        if fails:
+            with pytest.raises(SyncError, match="network unavailable"):
+                wrapper.sync_to_ankiweb()
+        else:
+            wrapper.sync_to_ankiweb()
+    return seen[0]
+
+
+def test_unsynced_changes_are_dated_just_after_the_last_sync(tmp_path: Path) -> None:
+    """So that settings another device synced since then are the newer ones."""
+    wrapper = _sync_wrapper(tmp_path)
+    try:
+        _mine(wrapper, "synced earlier")
+        wrapper.db().execute("update col set mod = mod - 60000")
+        _mark_synced(wrapper)
+        _, last_sync, _ = wrapper.sync_stamps()
+        _mine(wrapper, "mined since")
+        assert wrapper.sync_stamps()[0] > last_sync + 1
+
+        mod, seen_last_sync, _ = _stamps_seen_by_sync(wrapper)
+
+        assert (mod, seen_last_sync) == (last_sync + 1, last_sync)
+        # Nothing was transferred by the stand-in sync, so the changes still count as unsynced.
+        assert wrapper.has_unsynced_changes()
+        assert wrapper.find_notes("mined")
+    finally:
+        wrapper.close()
+
+
+def test_a_failed_sync_keeps_the_changes_marked_as_unsynced(tmp_path: Path) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    try:
+        _mine(wrapper, "synced earlier")
+        wrapper.db().execute("update col set mod = mod - 60000")
+        _mark_synced(wrapper)
+        _mine(wrapper, "mined since")
+
+        _stamps_seen_by_sync(wrapper, fails=True)
+
+        assert wrapper.has_unsynced_changes()
+        # A second attempt starts from the same stamps.
+        mod, last_sync, _ = _stamps_seen_by_sync(wrapper)
+        assert mod == last_sync + 1
+    finally:
+        wrapper.close()
+
+
+def test_sync_stamps_stay_untouched_without_a_reason_to_change_them(tmp_path: Path) -> None:
+    wrapper = _sync_wrapper(tmp_path)
+    try:
+        # Never synced: there is no last sync to date the changes after.
+        _mine(wrapper, "first card")
+        never_synced = wrapper.sync_stamps()
+        assert never_synced[1] == 0
+        assert _stamps_seen_by_sync(wrapper) == never_synced
+
+        # Nothing unsynced: the collection is only pulling.
+        _mark_synced(wrapper)
+        synced = wrapper.sync_stamps()
+        assert _stamps_seen_by_sync(wrapper) == synced
+        assert not wrapper.has_unsynced_changes()
+    finally:
+        wrapper.close()
+
+
 def test_conflict_with_unsynced_changes_stops_without_replacing(tmp_path: Path) -> None:
     wrapper = _sync_wrapper(tmp_path)
     wrapper.add_note(
