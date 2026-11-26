@@ -215,6 +215,15 @@ stops with a conflict error instead of dropping them. Sync those cards from some
 `"discardLocalChanges": true` (HTTP) to accept AnkiWeb's copy. Media uses Anki's normal
 bidirectional merge.
 
+Anki merges notes, cards, reviews, decks, presets and note types item by item, but the collection's
+settings (the FSRS switch, preferences, counters) travel as a whole, from whichever side changed
+its collection last. So that a card mined on the server never puts back older settings, the server
+lets AnkiWeb's settings win whenever another device has synced since the server's last sync. One
+case stays outside the server's reach, because it happens between that device and AnkiWeb: a
+setting changed on a device that syncs only after the server's next sync is replaced by AnkiWeb's
+copy, unless that device changes its collection again first. Sync a device right after changing
+settings on it.
+
 The HTTP compatibility actions remain available. `sync` includes collection data and media and
 waits for both; `syncMedia` waits for media completion; `syncStatus` reports whether another
 collection sync is required and is not a runtime progress endpoint.

@@ -164,6 +164,31 @@ class AnkiWrapper:
         mod, last_sync, _usn = self.sync_stamps()
         return mod > last_sync
 
+    def _let_newer_settings_win(self) -> bool:
+        """Keep a sync of this server's changes from replacing settings changed elsewhere.
+
+        A normal sync merges notes, cards, reviews, decks, presets and note types item
+        by item, but the collection's settings (the ``config`` table: the FSRS switch,
+        preferences, counters) travel as a whole, from one side only: the one whose
+        collection was modified last. A card mined here just after another device
+        synced a settings change would make this server that side, and its older copy
+        of the settings would replace the new one on AnkiWeb and then on every device.
+
+        Nobody changes settings on this server, so its unsynced changes are dated to
+        just after its last sync. It then stays the newer side only while AnkiWeb has
+        not changed since that sync; once another device has synced, AnkiWeb's
+        settings win. The price is this server's own counters since its last sync
+        (such as the next new-card position), which Anki tolerates.
+
+        Returns whether the collection has unsynced changes.
+        """
+        mod, last_sync, _usn = self.sync_stamps()
+        if mod <= last_sync:
+            return False
+        if last_sync > 0 and mod > last_sync + 1:
+            self.db().execute("update col set mod = ?", last_sync + 1)
+        return True
+
     def _refresh_after_merge(self) -> None:
         """Drop Python-side caches after a normal sync changed the collection.
 
@@ -204,8 +229,8 @@ class AnkiWrapper:
             except Exception as error:
                 raise self._phase_error("AnkiWeb authentication", error) from error
 
+            had_local_changes = self._let_newer_settings_win()
             stamps_before = self.sync_stamps()
-            had_local_changes = stamps_before[0] > stamps_before[1]
             self._report(progress, "Synchronizing collection")
             try:
                 result = self.col.sync_collection(auth, sync_media=True)
